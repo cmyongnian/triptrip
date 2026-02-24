@@ -1,0 +1,44 @@
+{
+  "type": "Compass Connections",
+  "version": {
+    "$numberInt": "1"
+  },
+  "connections": [
+    {
+      "id": "66749823-fa46-4c01-a80a-c90a12a8faa8",
+      "lastUsed": {
+        "$date": {
+          "$numberLong": "1771845671449"
+        }
+      },
+      "favorite": {
+        "name": "TEST"
+      },
+      "savedConnectionType": "recent",
+      "connectionOptions": {
+        "connectionString": "mongodb://localhost:27017/",
+        "oidc": {
+          "serializedState": "eyJvaWRjUGx1Z2luU3RhdGVWZXJzaW9uIjoxLCJzdGF0ZSI6W119"
+        }
+      }
+    },
+    {
+      "id": "ad23c4e0-e5bc-438c-80ae-6aea21fb65ee",
+      "lastUsed": {
+        "$date": {
+          "$numberLong": "1771904955859"
+        }
+      },
+      "favorite": {
+        "name": "localhost:27017"
+      },
+      "savedConnectionType": "recent",
+      "connectionOptions": {
+        "connectionString": "mongodb://localhost:27017/hotel-management",
+        "oidc": {
+          "serializedState": "eyJvaWRjUGx1Z2luU3RhdGVWZXJzaW9uIjoxLCJzdGF0ZSI6W119"
+        }
+      }
+    }
+  ]
+}

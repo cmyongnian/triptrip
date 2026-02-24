@@ -1,0 +1,48 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Build files
+build/
+dist/
+
+# Test files
+coverage/
+.nyc_output/
+
+# Log files
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+
+# Package manager files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml

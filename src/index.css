@@ -1,0 +1,19 @@
+/* src/index.css */
+:root {
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+/* Force the app to use the full width of the browser */
+#root, body, html {
+  margin: 0;
+  padding: 0;
+  width: 100vw !important;
+  height: 100vh !important;
+  display: block !important; /* This stops the centering! */
+}
+
+body {
+  background-color: #f0f2f5;
+  overflow-x: hidden;
+}

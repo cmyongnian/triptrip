@@ -33,7 +33,7 @@ const sendErrorProd = (err, res) => {
   } else {
     // 记录错误
     console.error('ERROR:', err);
-    
+
     // 发送通用错误信息
     res.status(500).json({
       status: 'error',
@@ -71,19 +71,20 @@ const globalErrorHandler = (err, req, res, next) => {
   err.status = err.status || 'error';
 
   if (process.env.NODE_ENV === 'development') {
-    sendErrorDev(err, res);
-  } else if (process.env.NODE_ENV === 'production') {
-    let error = { ...err };
-    error.message = err.message;
-
-    if (error.name === 'CastError') error = handleCastErrorDB(error);
-    if (error.code === 11000) error = handleDuplicateFieldsDB(error);
-    if (error.name === 'ValidationError') error = handleValidationErrorDB(error);
-    if (error.name === 'JsonWebTokenError') error = handleJWTError();
-    if (error.name === 'TokenExpiredError') error = handleJWTExpiredError();
-
-    sendErrorProd(error, res);
+    return sendErrorDev(err, res);
   }
+
+  // 默认都按生产风格处理（包括 production 和未设置 NODE_ENV）
+  let error = { ...err };
+  error.message = err.message;
+
+  if (error.name === 'CastError') error = handleCastErrorDB(error);
+  if (error.code === 11000) error = handleDuplicateFieldsDB(error);
+  if (error.name === 'ValidationError') error = handleValidationErrorDB(error);
+  if (error.name === 'JsonWebTokenError') error = handleJWTError();
+  if (error.name === 'TokenExpiredError') error = handleJWTExpiredError();
+
+  return sendErrorProd(error, res);
 };
 
 module.exports = {

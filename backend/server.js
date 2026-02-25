@@ -27,6 +27,7 @@ const authRoutes = require('./routes/auth');
 const hotelsRoutes = require('./routes/hotels');
 app.use('/api/auth', authRoutes);
 app.use('/api/hotels', hotelsRoutes);
+app.use('/api/public/hotels', publicHotelsRoutes);
 
 // API 根路径
 app.get('/api', (req, res) => {
@@ -60,4 +61,3 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 
-app.use('/api/public/hotels', publicHotelsRoutes)

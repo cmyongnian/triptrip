@@ -1,60 +1,197 @@
-// backend/controllers/publicHotelsController.js
 const Hotel = require('../models/Hotel')
 
 // GET /api/public/hotels/meta
 exports.getMeta = async (req, res, next) => {
     try {
-        const filter = { status: 'approved' }
+        const hotels = await Hotel.find({ status: 'approved' }).select('city tags starRating roomTypes')
 
-        // cities/tags 从已发布酒店做 distinct
-        const [cities, tags] = await Promise.all([
-            Hotel.distinct('city', filter),
-            Hotel.distinct('tags', filter)
-        ])
+        const citySet = new Set()
+        const tagSet = new Set()
+        let minPrice = Infinity
+        let maxPrice = 0
 
-        // 星级固定 3-5（与现有 schema 一致）
-        const starRatings = [3, 4, 5]
+        for (const h of hotels) {
+            if (h.city) citySet.add(h.city)
 
-        // 价格范围：简单做法：从 roomTypes.price 拉出所有价格求 min/max
-        // 注意：数据量大时不建议全表扫；后续可引入聚合 + 索引 / 或持久化 minPrice
-        const hotels = await Hotel.find(filter).select('roomTypes.price')
-        const prices = hotels.flatMap(h => (h.roomTypes || []).map(rt => rt.price))
-        const min = prices.length ? Math.min(...prices) : 0
-        const max = prices.length ? Math.max(...prices) : 2000
+            if (Array.isArray(h.tags)) {
+                h.tags.forEach(tag => {
+                    if (tag) tagSet.add(tag)
+                })
+            }
 
-        res.json({
-            cities: (cities || []).filter(Boolean),
-            tags: (tags || []).filter(Boolean),
-            starRatings,
-            priceRange: { min, max }
+            if (Array.isArray(h.roomTypes)) {
+                h.roomTypes.forEach(rt => {
+                    if (typeof rt.price === 'number') {
+                        minPrice = Math.min(minPrice, rt.price)
+                        maxPrice = Math.max(maxPrice, rt.price)
+                    }
+                })
+            }
+        }
+
+        if (!Number.isFinite(minPrice)) minPrice = 0
+
+        return res.json({
+            cities: Array.from(citySet),
+            tags: Array.from(tagSet),
+            starRatings: [3, 4, 5],
+            priceRange: { min: minPrice, max: maxPrice || 2000 }
         })
     } catch (err) {
         next(err)
     }
 }
 
-// GET /api/public/hotels/banners?limit=5
+// GET /api/public/hotels/banners
 exports.getBanners = async (req, res, next) => {
     try {
-        const limit = Math.min(Number(req.query.limit || 5), 10)
-        const hotels = await Hotel.find({ status: 'approved', featured: true })
-            .limit(limit)
-            .select('nameCn bannerImage starRating address roomTypes')
+        const limit = Math.min(Math.max(Number(req.query.limit) || 5, 1), 10)
 
-        const items = hotels.map(h => {
-            const prices = (h.roomTypes || []).map(rt => rt.price)
+        const hotels = await Hotel.find({
+            status: 'approved',
+            featured: true
+        })
+            .select('nameCn nameEn city bannerImage images')
+            .limit(limit)
+
+        const items = hotels.map(h => ({
+            id: String(h._id),
+            title: h.nameCn || h.nameEn || '精选酒店',
+            subtitle: h.city || '',
+            imageUrl: h.bannerImage || (Array.isArray(h.images) ? h.images[0] : '') || ''
+        }))
+
+        return res.json({ items })
+    } catch (err) {
+        next(err)
+    }
+}
+
+// GET /api/public/hotels
+exports.listHotels = async (req, res, next) => {
+    try {
+        const {
+            city,
+            keyword,
+            star,
+            tags,
+            page = 1,
+            pageSize = 10,
+            sort = 'recommended' // recommended | priceAsc | priceDesc
+        } = req.query
+
+        const filter = { status: 'approved' }
+
+        if (city) filter.city = city
+        if (star) filter.starRating = Number(star)
+
+        if (keyword) {
+            filter.$or = [
+                { nameCn: { $regex: keyword, $options: 'i' } },
+                { nameEn: { $regex: keyword, $options: 'i' } },
+                { address: { $regex: keyword, $options: 'i' } },
+                { city: { $regex: keyword, $options: 'i' } }
+            ]
+        }
+
+        if (tags) {
+            const tagList = String(tags)
+                .split(',')
+                .map(t => t.trim())
+                .filter(Boolean)
+
+            if (tagList.length) {
+                filter.tags = { $all: tagList }
+            }
+        }
+
+        const p = Math.max(Number(page) || 1, 1)
+        const ps = Math.min(Math.max(Number(pageSize) || 10, 1), 50)
+        const skip = (p - 1) * ps
+
+        const [total, hotels] = await Promise.all([
+            Hotel.countDocuments(filter),
+            Hotel.find(filter)
+                .select('nameCn nameEn city address starRating images bannerImage roomTypes tags amenities featured')
+                .skip(skip)
+                .limit(ps)
+        ])
+
+        let items = hotels.map(h => {
+            const prices = (h.roomTypes || []).map(rt => rt.price).filter(v => typeof v === 'number')
             const minPrice = prices.length ? Math.min(...prices) : 0
+
             return {
-                hotelId: String(h._id),
-                title: h.nameCn,
-                imageUrl: h.bannerImage || '',
-                starRating: h.starRating,
-                address: h.address,
-                minPrice
+                id: String(h._id),
+                name: h.nameCn || h.nameEn || '未命名酒店',
+                city: h.city || '',
+                address: h.address || '',
+                starRating: h.starRating || 0,
+                tags: h.tags || [],
+                amenities: h.amenities || [],
+                imageUrl: h.bannerImage || (h.images && h.images[0]) || '',
+                minPrice,
+                featured: !!h.featured
             }
         })
 
-        res.json({ items })
+        if (sort === 'priceAsc') items.sort((a, b) => a.minPrice - b.minPrice)
+        if (sort === 'priceDesc') items.sort((a, b) => b.minPrice - a.minPrice)
+        if (sort === 'recommended') {
+            items.sort((a, b) => {
+                if (Number(b.featured) !== Number(a.featured)) return Number(b.featured) - Number(a.featured)
+                if (b.starRating !== a.starRating) return b.starRating - a.starRating
+                return a.minPrice - b.minPrice
+            })
+        }
+
+        return res.json({
+            items,
+            pagination: {
+                page: p,
+                pageSize: ps,
+                total,
+                totalPages: Math.ceil(total / ps)
+            }
+        })
+    } catch (err) {
+        next(err)
+    }
+}
+
+// GET /api/public/hotels/:id
+exports.getHotelDetail = async (req, res, next) => {
+    try {
+        const hotel = await Hotel.findOne({
+            _id: req.params.id,
+            status: 'approved'
+        }).select(
+            'nameCn nameEn city address starRating openingDate images bannerImage roomTypes tags amenities geo featured'
+        )
+
+        if (!hotel) {
+            return res.status(404).json({ message: 'Hotel not found' })
+        }
+
+        const prices = (hotel.roomTypes || []).map(rt => rt.price).filter(v => typeof v === 'number')
+        const minPrice = prices.length ? Math.min(...prices) : 0
+
+        return res.json({
+            id: String(hotel._id),
+            name: hotel.nameCn || hotel.nameEn || '未命名酒店',
+            city: hotel.city || '',
+            address: hotel.address || '',
+            starRating: hotel.starRating || 0,
+            openingDate: hotel.openingDate || null,
+            images: hotel.images || [],
+            bannerImage: hotel.bannerImage || '',
+            tags: hotel.tags || [],
+            amenities: hotel.amenities || [],
+            roomTypes: hotel.roomTypes || [],
+            minPrice,
+            geo: hotel.geo || null,
+            featured: !!hotel.featured
+        })
     } catch (err) {
         next(err)
     }

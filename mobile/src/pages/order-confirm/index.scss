@@ -1,0 +1,211 @@
+.order-confirm-page {
+    min-height: 100vh;
+    background: #f5f7fb;
+    padding: 0 0 calc(120px + env(safe-area-inset-bottom));
+}
+
+.oc-header {
+    background: linear-gradient(180deg, #eaf3ff 0%, #f5f7fb 80%);
+    padding: 20px 20px 12px;
+}
+
+.oc-hotel-card {
+    background: #fff;
+    border-radius: 20px;
+    padding: 20px;
+    box-shadow: 0 8px 24px rgba(31, 35, 41, 0.06);
+}
+
+.oc-hotel-name {
+    font-size: 32px;
+    font-weight: 700;
+    color: #1f2329;
+    line-height: 1.35;
+}
+
+.oc-room-line {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.oc-room-name {
+    font-size: 24px;
+    color: #4e5969;
+    margin-right: 10px;
+}
+
+.oc-tag {
+    display: inline-flex;
+    align-items: center;
+    height: 38px;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-size: 20px;
+    margin-right: 8px;
+    margin-top: 6px;
+}
+
+.oc-tag-blue {
+    color: #1677ff;
+    background: rgba(22, 119, 255, 0.08);
+}
+
+.oc-tag-orange {
+    color: #ff7a00;
+    background: rgba(255, 122, 0, 0.1);
+}
+
+.oc-section {
+    margin: 14px 20px 0;
+    background: #fff;
+    border-radius: 20px;
+    padding: 20px;
+    box-shadow: 0 8px 24px rgba(31, 35, 41, 0.05);
+}
+
+.oc-section-title {
+    font-size: 28px;
+    font-weight: 700;
+    color: #1f2329;
+    margin-bottom: 14px;
+}
+
+.oc-cell {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 72px;
+    padding: 8px 0;
+}
+
+.oc-cell+.oc-cell {
+    border-top: 1px solid #eef1f6;
+}
+
+.oc-cell-label {
+    font-size: 26px;
+    color: #4e5969;
+}
+
+.oc-cell-value {
+    font-size: 26px;
+    color: #1f2329;
+    text-align: right;
+    max-width: 70%;
+}
+
+.oc-cell-value.highlight {
+    color: #1677ff;
+    font-weight: 600;
+}
+
+.oc-cell-value.price {
+    color: #ff7a00;
+    font-weight: 700;
+}
+
+.oc-input-wrap {
+    margin-top: 12px;
+}
+
+.oc-input-label {
+    font-size: 24px;
+    color: #4e5969;
+    margin-bottom: 8px;
+}
+
+.oc-input-box {
+    height: 84px;
+    border-radius: 16px;
+    background: #f7f8fa;
+    border: 1px solid #eef1f6;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+}
+
+.oc-input-box input {
+    width: 100%;
+    font-size: 28px;
+    color: #1f2329;
+}
+
+.oc-tip {
+    margin-top: 10px;
+    font-size: 22px;
+    color: #86909c;
+    line-height: 1.5;
+}
+
+.oc-policy {
+    font-size: 24px;
+    color: #4e5969;
+    line-height: 1.6;
+}
+
+.oc-bottom-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid #eef1f6;
+    z-index: 99;
+}
+
+.oc-bottom-inner {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.oc-price-box {
+    flex: 1;
+    min-width: 0;
+}
+
+.oc-price-label {
+    font-size: 22px;
+    color: #86909c;
+}
+
+.oc-price-value {
+    margin-top: 2px;
+    font-size: 22px;
+    color: #1f2329;
+}
+
+.oc-price-value .yen {
+    color: #ff7a00;
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.oc-price-value .num {
+    color: #ff7a00;
+    font-size: 38px;
+    font-weight: 800;
+    margin: 0 4px;
+}
+
+.oc-submit-btn {
+    width: 250px;
+    height: 84px;
+    border-radius: 42px;
+    border: none;
+    background: linear-gradient(135deg, #ff9b2f 0%, #ff7a00 100%);
+    color: #fff;
+    font-size: 28px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.oc-submit-btn::after {
+    border: none;
+}

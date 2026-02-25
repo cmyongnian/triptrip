@@ -522,7 +522,7 @@ export default function HotelListPage() {
                                         key={`${tag}-${idx}`}
                                         style={{
                                             fontSize: '20rpx',
-                                            color: '#1677ff',
+                                            color: '#0A6CFF',
                                             background: '#eef5ff',
                                             padding: '4rpx 10rpx',
                                             borderRadius: '999rpx'
@@ -547,8 +547,8 @@ export default function HotelListPage() {
                                 {checkIn} - {checkOut}
                             </Text>
                             <View>
-                                <Text style={{ fontSize: '20rpx', color: '#ff4d4f' }}>¥</Text>
-                                <Text style={{ fontSize: '34rpx', color: '#ff4d4f', fontWeight: 700 }}>
+                                <Text style={{ fontSize: '20rpx', color: '#FF7A00' }}>¥</Text>
+                                <Text style={{ fontSize: '34rpx', color: '#FF7A00', fontWeight: 700 }}>
                                     {minPrice}
                                 </Text>
                                 <Text style={{ fontSize: '20rpx', color: '#999' }}>/晚起</Text>
@@ -608,7 +608,7 @@ export default function HotelListPage() {
                             width: '120rpx',
                             height: '72rpx',
                             borderRadius: '16rpx',
-                            background: '#1677ff',
+                            background: '#0A6CFF',
                             color: '#fff',
                             display: 'flex',
                             alignItems: 'center',
@@ -629,7 +629,7 @@ export default function HotelListPage() {
                         <Text
                             style={{
                                 fontSize: '20rpx',
-                                color: '#1677ff',
+                                color: '#0A6CFF',
                                 background: '#eef5ff',
                                 padding: '4rpx 10rpx',
                                 borderRadius: '999rpx'
@@ -667,7 +667,7 @@ export default function HotelListPage() {
                                 padding: '10rpx 16rpx',
                                 borderRadius: '999rpx',
                                 background: city ? '#eef5ff' : '#f5f7fb',
-                                color: city ? '#1677ff' : '#333',
+                                color: city ? '#0A6CFF' : '#333',
                                 fontSize: '24rpx'
                             }}
                         >
@@ -692,7 +692,7 @@ export default function HotelListPage() {
                                 padding: '10rpx 16rpx',
                                 borderRadius: '999rpx',
                                 background: star ? '#eef5ff' : '#f5f7fb',
-                                color: star ? '#1677ff' : '#333',
+                                color: star ? '#0A6CFF' : '#333',
                                 fontSize: '24rpx'
                             }}
                         >
@@ -717,7 +717,7 @@ export default function HotelListPage() {
                                 padding: '10rpx 16rpx',
                                 borderRadius: '999rpx',
                                 background: sort !== 'recommended' ? '#eef5ff' : '#f5f7fb',
-                                color: sort !== 'recommended' ? '#1677ff' : '#333',
+                                color: sort !== 'recommended' ? '#0A6CFF' : '#333',
                                 fontSize: '24rpx'
                             }}
                         >
@@ -764,7 +764,7 @@ export default function HotelListPage() {
                                             justifyContent: 'center',
                                             padding: '8rpx 14rpx',
                                             borderRadius: '999rpx',
-                                            background: active ? '#1677ff' : '#f5f7fb',
+                                            background: active ? '#0A6CFF' : '#f5f7fb',
                                             color: active ? '#fff' : '#333',
                                             fontSize: '22rpx',
                                             flexShrink: 0
@@ -782,7 +782,7 @@ export default function HotelListPage() {
             {/* 结果统计 */}
             <View style={{ padding: '14rpx 20rpx 10rpx' }}>
                 <Text style={{ fontSize: '22rpx', color: '#666' }}>
-                    共找到 <Text style={{ color: '#1677ff' }}>{total}</Text> 家酒店
+                    共找到 <Text style={{ color: '#0A6CFF' }}>{total}</Text> 家酒店
                 </Text>
             </View>
 

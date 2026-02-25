@@ -283,12 +283,23 @@ export default function HotelDetailPage() {
             return
         }
 
-        // 先存一个预订草稿，后续你做确认页/订单页时直接读
+        // 关键修复：roomTypeId 增加兜底，避免确认页读取草稿时报“无效预订信息”
+        const roomTypeId = String(
+            selectedRoom._id || selectedRoom.id || selectedRoom.type || selectedRoomId || ''
+        ).trim()
+
+        if (!roomTypeId) {
+            console.warn('[hotel-detail] roomTypeId 缺失，selectedRoom =', selectedRoom)
+            Taro.showToast({ title: '房型信息缺失，请重新选择房型', icon: 'none' })
+            return
+        }
+
+        // 先存一个预订草稿，后续确认页/订单页读取
         const draft = {
             hotelId: detail.id || detail.hotelId,
             hotelName: detail.name,
-            roomTypeId: selectedRoom._id || selectedRoom.id || '',
-            roomTypeName: selectedRoom.type,
+            roomTypeId,
+            roomTypeName: selectedRoom.type || '房型',
             price: toNum(selectedRoom.price, 0),
             nights,
             checkIn,
@@ -298,6 +309,7 @@ export default function HotelDetailPage() {
             breakfastIncluded: !!selectedRoom.breakfastIncluded,
             maxGuests: toNum(selectedRoom.maxGuests, 2)
         }
+
         Taro.setStorageSync('triptrip_booking_draft', draft)
 
         Taro.showModal({
@@ -453,7 +465,7 @@ export default function HotelDetailPage() {
                                 key={`${tag}-${idx}`}
                                 style={{
                                     fontSize: '22rpx',
-                                    color: '#1677ff',
+                                    color: '#0A6CFF',
                                     background: '#eef5ff',
                                     padding: '6rpx 12rpx',
                                     borderRadius: '999rpx'
@@ -477,7 +489,7 @@ export default function HotelDetailPage() {
             >
                 <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Text style={{ fontSize: '30rpx', fontWeight: 700, color: '#222' }}>入住信息</Text>
-                    <Text style={{ fontSize: '24rpx', color: '#1677ff' }}>共 {nights} 晚</Text>
+                    <Text style={{ fontSize: '24rpx', color: '#0A6CFF' }}>共 {nights} 晚</Text>
                 </View>
 
                 <View style={{ marginTop: '14rpx', display: 'flex', gap: '16rpx', flexWrap: 'wrap' }}>
@@ -576,7 +588,7 @@ export default function HotelDetailPage() {
                                         key={rid}
                                         onClick={() => setSelectedRoomId(rid)}
                                         style={{
-                                            border: selected ? '2rpx solid #1677ff' : '2rpx solid #f0f0f0',
+                                            border: selected ? '2rpx solid #0A6CFF' : '2rpx solid #f0f0f0',
                                             background: selected ? '#f7fbff' : '#fff',
                                             borderRadius: '20rpx',
                                             padding: '20rpx',
@@ -600,7 +612,7 @@ export default function HotelDetailPage() {
                                                         <Text
                                                             style={{
                                                                 fontSize: '20rpx',
-                                                                color: '#1677ff',
+                                                                color: '#0A6CFF',
                                                                 background: '#eaf3ff',
                                                                 padding: '4rpx 10rpx',
                                                                 borderRadius: '999rpx'
@@ -674,8 +686,8 @@ export default function HotelDetailPage() {
 
                                             <View style={{ width: '190rpx', textAlign: 'right' }}>
                                                 <View>
-                                                    <Text style={{ fontSize: '22rpx', color: '#ff4d4f' }}>¥</Text>
-                                                    <Text style={{ fontSize: '38rpx', fontWeight: 700, color: '#ff4d4f' }}>
+                                                    <Text style={{ fontSize: '22rpx', color: '#FF7A00' }}>¥</Text>
+                                                    <Text style={{ fontSize: '38rpx', fontWeight: 700, color: '#FF7A00' }}>
                                                         {roomPrice}
                                                     </Text>
                                                 </View>
@@ -714,7 +726,7 @@ export default function HotelDetailPage() {
                                                     borderRadius: '999rpx',
                                                     fontSize: '24rpx',
                                                     color: '#fff',
-                                                    background: soldOut ? '#d9d9d9' : '#1677ff'
+                                                    background: soldOut ? '#d9d9d9' : '#0A6CFF'
                                                 }}
                                             >
                                                 {soldOut ? '暂不可订' : '预订'}
@@ -747,8 +759,8 @@ export default function HotelDetailPage() {
             >
                 <View style={{ flex: 1, minWidth: 0 }}>
                     <View style={{ display: 'flex', alignItems: 'baseline', gap: '6rpx' }}>
-                        <Text style={{ fontSize: '22rpx', color: '#ff4d4f' }}>¥</Text>
-                        <Text style={{ fontSize: '40rpx', lineHeight: 1, fontWeight: 700, color: '#ff4d4f' }}>
+                        <Text style={{ fontSize: '22rpx', color: '#FF7A00' }}>¥</Text>
+                        <Text style={{ fontSize: '40rpx', lineHeight: 1, fontWeight: 700, color: '#FF7A00' }}>
                             {selectedRoom ? toNum(selectedRoom.price, minDisplayPrice) : minDisplayPrice}
                         </Text>
                         <Text style={{ fontSize: '22rpx', color: '#999' }}>/晚起</Text>
@@ -788,7 +800,7 @@ export default function HotelDetailPage() {
                         color: '#fff',
                         fontSize: '28rpx',
                         fontWeight: 700,
-                        background: selectedRoom && toNum(selectedRoom.inventory, 0) > 0 ? '#1677ff' : '#d9d9d9'
+                        background: selectedRoom && toNum(selectedRoom.inventory, 0) > 0 ? '#0A6CFF' : '#d9d9d9'
                     }}
                 >
                     立即预订

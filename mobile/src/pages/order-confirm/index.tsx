@@ -427,7 +427,7 @@ export default function OrderConfirmPage() {
                     </View>
                     <View style={{ borderTop: '1px solid #f0f0f0', paddingTop: '12rpx', display: 'flex', justifyContent: 'space-between' }}>
                         <Text style={{ fontSize: '26rpx', color: '#222', fontWeight: 600 }}>订单总额</Text>
-                        <Text style={{ fontSize: '30rpx', color: '#ff4d4f', fontWeight: 700 }}>¥{totalPrice}</Text>
+                        <Text style={{ fontSize: '30rpx', color: '#FF7A00', fontWeight: 700 }}>¥{totalPrice}</Text>
                     </View>
                 </View>
             </View>
@@ -451,8 +451,8 @@ export default function OrderConfirmPage() {
                 <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: '22rpx', color: '#999' }}>合计</Text>
                     <View style={{ display: 'flex', alignItems: 'baseline', gap: '6rpx' }}>
-                        <Text style={{ fontSize: '22rpx', color: '#ff4d4f' }}>¥</Text>
-                        <Text style={{ fontSize: '40rpx', lineHeight: 1, fontWeight: 700, color: '#ff4d4f' }}>
+                        <Text style={{ fontSize: '22rpx', color: '#FF7A00' }}>¥</Text>
+                        <Text style={{ fontSize: '40rpx', lineHeight: 1, fontWeight: 700, color: '#FF7A00' }}>
                             {totalPrice}
                         </Text>
                     </View>

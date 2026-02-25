@@ -1,0 +1,188 @@
+/* ========== TripTrip 全局主题（携程风格基础） ========== */
+
+page {
+    background: #f5f7fb;
+    color: #1f2329;
+    font-size: 28px;
+    line-height: 1.5;
+}
+
+view,
+text,
+button,
+input {
+    box-sizing: border-box;
+}
+
+.container {
+    min-height: 100vh;
+    background: #f5f7fb;
+    padding: 20px 20px calc(24px + env(safe-area-inset-bottom));
+}
+
+.card {
+    background: #fff;
+    border-radius: 20px;
+    box-shadow: 0 8px 24px rgba(31, 35, 41, 0.06);
+    padding: 20px;
+    margin-bottom: 16px;
+}
+
+.card-title {
+    font-size: 30px;
+    font-weight: 700;
+    color: #1f2329;
+    margin-bottom: 14px;
+}
+
+.muted {
+    color: #86909c;
+}
+
+.primary-text {
+    color: #0A6CFF;
+}
+
+.price-text {
+    color: #ff7a00;
+    font-weight: 700;
+}
+
+.section-gap {
+    height: 12px;
+}
+
+.divider {
+    height: 1px;
+    background: #eef1f6;
+    margin: 16px 0;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.row-start {
+    display: flex;
+    align-items: center;
+}
+
+.tag {
+    display: inline-flex;
+    align-items: center;
+    height: 40px;
+    padding: 0 14px;
+    border-radius: 999px;
+    font-size: 22px;
+    margin-right: 10px;
+    margin-bottom: 10px;
+}
+
+.tag-blue {
+    color: #0A6CFF;
+    background: rgba(22, 119, 255, 0.08);
+}
+
+.tag-orange {
+    color: #ff7a00;
+    background: rgba(255, 122, 0, 0.1);
+}
+
+.tag-gray {
+    color: #4e5969;
+    background: #f2f3f5;
+}
+
+.btn-primary {
+    height: 84px;
+    border-radius: 42px;
+    background: linear-gradient(135deg, #3b8cff 0%, #0A6CFF 100%);
+    color: #fff;
+    border: none;
+    font-size: 28px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-primary::after {
+    border: none;
+}
+
+.btn-ghost {
+    height: 76px;
+    border-radius: 38px;
+    background: #fff;
+    color: #0A6CFF;
+    border: 1px solid rgba(22, 119, 255, 0.25);
+    font-size: 26px;
+}
+
+.input-box {
+    height: 84px;
+    background: #f7f8fa;
+    border: 1px solid #eef1f6;
+    border-radius: 16px;
+    padding: 0 18px;
+    display: flex;
+    align-items: center;
+}
+
+.input-box input {
+    width: 100%;
+    font-size: 28px;
+    color: #1f2329;
+}
+
+/* 吸底操作栏（像携程下单页） */
+.bottom-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid #eef1f6;
+    padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
+    z-index: 999;
+}
+
+.bottom-bar-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.bottom-bar-price {
+    flex: 1;
+    min-width: 0;
+}
+
+.bottom-bar-price .label {
+    font-size: 22px;
+    color: #86909c;
+}
+
+.bottom-bar-price .value {
+    font-size: 22px;
+    color: #1f2329;
+}
+
+.bottom-bar-price .value .num {
+    font-size: 38px;
+    color: #ff7a00;
+    font-weight: 800;
+    margin: 0 4px;
+}
+
+.bottom-bar-action {
+    width: 240px;
+}
+
+.page-bottom-placeholder {
+    height: calc(120px + env(safe-area-inset-bottom));
+}

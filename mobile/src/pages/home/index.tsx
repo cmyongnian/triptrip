@@ -432,7 +432,7 @@ export default function HomePage() {
                     <Text style={{ fontSize: '18px', fontWeight: 'bold' }}>酒店预订</Text>
                     {loading ? <Text style={{ marginLeft: '8px', color: '#666' }}>加载中...</Text> : null}
                 </View>
-                <Text onClick={clearSearchCache} style={{ color: '#1677ff', fontSize: '12px' }}>
+                <Text onClick={clearSearchCache} style={{ color: '#0A6CFF', fontSize: '12px' }}>
                     重置搜索
                 </Text>
             </View>
@@ -569,7 +569,7 @@ export default function HomePage() {
                                         </Text>
 
                                         <Text
-                                            style={{ fontSize: '12px', color: '#ff4d4f' }}
+                                            style={{ fontSize: '12px', color: '#FF7A00' }}
                                             onClick={(e) => removeFavoriteFromHome(item.id, e)}
                                         >
                                             取消收藏
@@ -581,7 +581,7 @@ export default function HomePage() {
                                     </View>
 
                                     <View style={{ marginTop: '8px', textAlign: 'right' }}>
-                                        <Text style={{ color: '#ff4d4f', fontWeight: 600 }}>¥{item.minPrice || 0}</Text>
+                                        <Text style={{ color: '#FF7A00', fontWeight: 600 }}>¥{item.minPrice || 0}</Text>
                                         <Text style={{ color: '#999', fontSize: '12px' }}> 起</Text>
                                     </View>
                                 </View>
@@ -597,7 +597,7 @@ export default function HomePage() {
                     <Text style={{ fontWeight: 600 }}>最近浏览</Text>
                     {recentHistory.length > 0 ? (
                         <Text
-                            style={{ color: '#1677ff', fontSize: '12px' }}
+                            style={{ color: '#0A6CFF', fontSize: '12px' }}
                             onClick={() => {
                                 Taro.showModal({
                                     title: '清空最近浏览',
@@ -672,7 +672,7 @@ export default function HomePage() {
                                             >
                                                 {h.name}
                                             </Text>
-                                            {isFav ? <Text style={{ fontSize: '12px', color: '#ff4d4f' }}>已收藏</Text> : null}
+                                            {isFav ? <Text style={{ fontSize: '12px', color: '#FF7A00' }}>已收藏</Text> : null}
                                         </View>
 
                                         <View style={{ marginTop: '4px', color: '#666', fontSize: '12px' }}>
@@ -684,7 +684,7 @@ export default function HomePage() {
                                                 {h.viewedAt ? new Date(h.viewedAt).toLocaleString() : ''}
                                             </Text>
                                             <View>
-                                                <Text style={{ color: '#ff4d4f', fontWeight: 600 }}>¥{h.minPrice || 0}</Text>
+                                                <Text style={{ color: '#FF7A00', fontWeight: 600 }}>¥{h.minPrice || 0}</Text>
                                                 <Text style={{ color: '#999', fontSize: '12px' }}> 起</Text>
                                             </View>
                                         </View>
@@ -765,8 +765,8 @@ export default function HomePage() {
                                 style={{
                                     padding: '6px 10px',
                                     borderRadius: '999px',
-                                    border: active ? '1px solid #1677ff' : '1px solid #ddd',
-                                    color: active ? '#1677ff' : '#333',
+                                    border: active ? '1px solid #0A6CFF' : '1px solid #ddd',
+                                    color: active ? '#0A6CFF' : '#333',
                                     background: active ? '#f0f7ff' : '#fff'
                                 }}
                             >

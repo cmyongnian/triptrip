@@ -25,6 +25,8 @@ app.use(express.urlencoded({ extended: true }));
 // 注册路由
 const authRoutes = require('./routes/auth');
 const hotelsRoutes = require('./routes/hotels');
+const publicOrdersRoutes = require('./routes/publicOrders')
+app.use('/api/public/orders', publicOrdersRoutes)
 app.use('/api/auth', authRoutes);
 app.use('/api/hotels', hotelsRoutes);
 app.use('/api/public/hotels', publicHotelsRoutes);

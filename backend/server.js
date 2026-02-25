@@ -28,6 +28,7 @@ const hotelsRoutes = require('./routes/hotels');
 app.use('/api/auth', authRoutes);
 app.use('/api/hotels', hotelsRoutes);
 app.use('/api/public/hotels', publicHotelsRoutes);
+app.use('/api/public/orders', require('./routes/publicOrders'));
 
 // API 根路径
 app.get('/api', (req, res) => {

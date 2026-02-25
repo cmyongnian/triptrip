@@ -25,6 +25,27 @@ import {
 
 const { Title, Text } = Typography;
 
+const CANCEL_POLICY_OPTIONS = [
+  { label: '免费取消', value: 'free_cancellation' },
+  { label: '不可取消', value: 'non_refundable' }
+];
+
+const BED_TYPE_OPTIONS = [
+  { label: '大床', value: '大床' },
+  { label: '双床', value: '双床' },
+  { label: '单人床', value: '单人床' },
+  { label: '多床', value: '多床' }
+];
+
+const normalizeCancelPolicyForForm = (v) => {
+  if (!v) return 'free_cancellation';
+  if (v === '免费取消') return 'free_cancellation';
+  if (v === '不可取消') return 'non_refundable';
+  return ['free_cancellation', 'non_refundable'].includes(v)
+    ? v
+    : 'free_cancellation';
+};
+
 const HotelEntry = ({
   onSave,
   onCancel,
@@ -35,7 +56,6 @@ const HotelEntry = ({
 }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
-
   const isEdit = !!initialValues?._id;
 
   const t = useMemo(
@@ -53,7 +73,17 @@ const HotelEntry = ({
       form.setFieldsValue({
         starRating: 4,
         featured: false,
-        roomTypes: [{ type: '', price: 0 }],
+        roomTypes: [
+          {
+            type: '',
+            bedType: '大床',
+            breakfastIncluded: false,
+            cancelPolicy: 'free_cancellation',
+            maxGuests: 2,
+            inventory: 10,
+            price: 0
+          }
+        ],
         images: [{ url: '' }],
         tags: [],
         amenities: []
@@ -72,10 +102,25 @@ const HotelEntry = ({
         Array.isArray(initialValues.roomTypes) && initialValues.roomTypes.length
           ? initialValues.roomTypes.map(rt => ({
             _id: rt._id,
-            type: rt.type,
+            type: rt.type || '',
+            bedType: rt.bedType || '大床',
+            breakfastIncluded: !!rt.breakfastIncluded,
+            cancelPolicy: normalizeCancelPolicyForForm(rt.cancelPolicy),
+            maxGuests: Number(rt.maxGuests || 2),
+            inventory: Number(rt.inventory ?? 10),
             price: Number(rt.price || 0)
           }))
-          : [{ type: '', price: 0 }],
+          : [
+            {
+              type: '',
+              bedType: '大床',
+              breakfastIncluded: false,
+              cancelPolicy: 'free_cancellation',
+              maxGuests: 2,
+              inventory: 10,
+              price: 0
+            }
+          ],
       images:
         Array.isArray(initialValues.images) && initialValues.images.length
           ? initialValues.images.map(url => ({ url }))
@@ -93,6 +138,13 @@ const HotelEntry = ({
       .map(rt => ({
         ...(rt?._id ? { _id: rt._id } : {}),
         type: String(rt?.type || '').trim(),
+        bedType: String(rt?.bedType || '').trim(),
+        breakfastIncluded: !!rt?.breakfastIncluded,
+        cancelPolicy: ['free_cancellation', 'non_refundable'].includes(rt?.cancelPolicy)
+          ? rt.cancelPolicy
+          : 'free_cancellation',
+        maxGuests: Number(rt?.maxGuests || 2),
+        inventory: Number(rt?.inventory ?? 10),
         price: Number(rt?.price || 0)
       }))
       .filter(rt => rt.type);
@@ -143,14 +195,23 @@ const HotelEntry = ({
       const payload = normalizePayload(values);
       await onSave(payload);
 
-      // 仅新增成功时清空；编辑一般由上层关闭弹窗
       if (!isEdit) {
         message.success('酒店信息提交成功');
         form.resetFields();
         form.setFieldsValue({
           starRating: 4,
           featured: false,
-          roomTypes: [{ type: '', price: 0 }],
+          roomTypes: [
+            {
+              type: '',
+              bedType: '大床',
+              breakfastIncluded: false,
+              cancelPolicy: 'free_cancellation',
+              maxGuests: 2,
+              inventory: 10,
+              price: 0
+            }
+          ],
           images: [{ url: '' }],
           tags: [],
           amenities: []
@@ -172,7 +233,17 @@ const HotelEntry = ({
       initialValues={{
         starRating: 4,
         featured: false,
-        roomTypes: [{ type: '', price: 0 }],
+        roomTypes: [
+          {
+            type: '',
+            bedType: '大床',
+            breakfastIncluded: false,
+            cancelPolicy: 'free_cancellation',
+            maxGuests: 2,
+            inventory: 10,
+            price: 0
+          }
+        ],
         images: [{ url: '' }],
         tags: [],
         amenities: []
@@ -206,7 +277,7 @@ const HotelEntry = ({
           <Form.Item
             label="城市"
             name="city"
-            rules={[{ required: true, message: '请输入城市（移动端筛选会用到）' }]}
+            rules={[{ required: true, message: '请输入城市' }]}
           >
             <Input placeholder="例如：上海" />
           </Form.Item>
@@ -294,7 +365,7 @@ const HotelEntry = ({
       <Form.List name="images">
         {(fields, { add, remove }) => (
           <>
-            <Divider orientation="left">酒店图片列表（详情页 Banner 图集）</Divider>
+            <Divider orientation="left">酒店图片列表（详情页图集）</Divider>
             {fields.map((field, index) => (
               <Space key={field.key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
                 <Form.Item
@@ -324,53 +395,151 @@ const HotelEntry = ({
       <Form.List name="roomTypes">
         {(fields, { add, remove }) => (
           <>
-            <Divider orientation="left">房型与价格（移动端详情页会展示，且按价格升序返回）</Divider>
-            {fields.map((field) => (
-              <Row gutter={12} key={field.key} align="middle">
+            <Divider orientation="left">房型与价格（增强版）</Divider>
+
+            {fields.map((field, index) => (
+              <Card
+                key={field.key}
+                size="small"
+                style={{ marginBottom: 12 }}
+                title={`房型 ${index + 1}`}
+                extra={
+                  fields.length > 1 ? (
+                    <Button
+                      type="text"
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={() => remove(field.name)}
+                    >
+                      删除房型
+                    </Button>
+                  ) : null
+                }
+              >
                 {/* 保留子文档 _id（编辑时） */}
                 <Form.Item {...field} name={[field.name, '_id']} hidden>
                   <Input />
                 </Form.Item>
 
-                <Col xs={24} md={12}>
-                  <Form.Item
-                    {...field}
-                    label="房型"
-                    name={[field.name, 'type']}
-                    rules={[{ required: true, message: '请输入房型名称' }]}
-                  >
-                    <Input placeholder="例如：标准间 / 大床房 / 豪华套房" />
-                  </Form.Item>
-                </Col>
-                <Col xs={20} md={10}>
-                  <Form.Item
-                    {...field}
-                    label="价格"
-                    name={[field.name, 'price']}
-                    rules={[{ required: true, message: '请输入价格' }]}
-                  >
-                    <InputNumber
-                      min={0}
-                      style={{ width: '100%' }}
-                      placeholder="例如 399"
-                    />
-                  </Form.Item>
-                </Col>
-                <Col xs={4} md={2}>
-                  {fields.length > 1 && (
-                    <Button
-                      style={{ marginTop: 29 }}
-                      icon={<DeleteOutlined />}
-                      danger
-                      onClick={() => remove(field.name)}
-                    />
-                  )}
-                </Col>
-              </Row>
+                <Row gutter={12}>
+                  <Col xs={24} md={8}>
+                    <Form.Item
+                      {...field}
+                      label="房型名称"
+                      name={[field.name, 'type']}
+                      rules={[{ required: true, message: '请输入房型名称' }]}
+                    >
+                      <Input placeholder="如：豪华大床房" />
+                    </Form.Item>
+                  </Col>
+
+                  <Col xs={24} md={8}>
+                    <Form.Item
+                      {...field}
+                      label="床型"
+                      name={[field.name, 'bedType']}
+                      rules={[{ required: true, message: '请选择床型' }]}
+                    >
+                      <Select
+                        options={BED_TYPE_OPTIONS}
+                        placeholder="请选择床型"
+                        showSearch
+                        allowClear
+                      />
+                    </Form.Item>
+                  </Col>
+
+                  <Col xs={24} md={8}>
+                    <Form.Item
+                      {...field}
+                      label="价格（¥/晚）"
+                      name={[field.name, 'price']}
+                      rules={[{ required: true, message: '请输入价格' }]}
+                    >
+                      <InputNumber
+                        min={0}
+                        style={{ width: '100%' }}
+                        placeholder="例如 399"
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                <Row gutter={12}>
+                  <Col xs={24} md={8}>
+                    <Form.Item
+                      {...field}
+                      label="取消政策"
+                      name={[field.name, 'cancelPolicy']}
+                      rules={[{ required: true, message: '请选择取消政策' }]}
+                    >
+                      <Select
+                        options={CANCEL_POLICY_OPTIONS}
+                        placeholder="请选择取消政策"
+                      />
+                    </Form.Item>
+                  </Col>
+
+                  <Col xs={24} md={8}>
+                    <Form.Item
+                      {...field}
+                      label="可住人数"
+                      name={[field.name, 'maxGuests']}
+                      rules={[{ required: true, message: '请输入可住人数' }]}
+                    >
+                      <InputNumber
+                        min={1}
+                        max={10}
+                        style={{ width: '100%' }}
+                        placeholder="2"
+                      />
+                    </Form.Item>
+                  </Col>
+
+                  <Col xs={24} md={8}>
+                    <Form.Item
+                      {...field}
+                      label="库存（总量）"
+                      name={[field.name, 'inventory']}
+                      rules={[{ required: true, message: '请输入库存' }]}
+                    >
+                      <InputNumber
+                        min={0}
+                        style={{ width: '100%' }}
+                        placeholder="10"
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                <Row gutter={12}>
+                  <Col xs={24} md={8}>
+                    <Form.Item
+                      {...field}
+                      label="早餐"
+                      name={[field.name, 'breakfastIncluded']}
+                      valuePropName="checked"
+                    >
+                      <Switch checkedChildren="含早" unCheckedChildren="无早" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              </Card>
             ))}
+
             <Button
               type="dashed"
-              onClick={() => add({ type: '', price: 0 })}
+              onClick={() =>
+                add({
+                  type: '',
+                  bedType: '大床',
+                  breakfastIncluded: false,
+                  cancelPolicy: 'free_cancellation',
+                  maxGuests: 2,
+                  inventory: 10,
+                  price: 0
+                })
+              }
               block
               icon={<PlusOutlined />}
             >
@@ -389,11 +558,7 @@ const HotelEntry = ({
         >
           {t.submit}
         </Button>
-        {onCancel && (
-          <Button onClick={onCancel}>
-            取消
-          </Button>
-        )}
+        {onCancel && <Button onClick={onCancel}>取消</Button>}
       </div>
     </Form>
   );

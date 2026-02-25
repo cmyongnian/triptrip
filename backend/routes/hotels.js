@@ -30,29 +30,71 @@ const normalizeStringArray = (arr) => {
   if (!Array.isArray(arr)) return [];
   return Array.from(
     new Set(
-      arr
-        .map(v => (typeof v === 'string' ? v.trim() : ''))
-        .filter(Boolean)
+      arr.map(v => (typeof v === 'string' ? v.trim() : '')).filter(Boolean)
     )
   );
 };
 
 const normalizeImages = (arr) => {
   if (!Array.isArray(arr)) return [];
-  return arr
-    .map(v => (typeof v === 'string' ? v.trim() : ''))
-    .filter(Boolean);
+  return arr.map(v => (typeof v === 'string' ? v.trim() : '')).filter(Boolean);
+};
+
+const normalizeCancelPolicy = (value) => {
+  if (typeof value !== 'string') return 'free_cancellation';
+  const v = value.trim();
+
+  // 兼容中文/旧值写法
+  const aliasMap = {
+    free: 'free_cancellation',
+    free_cancel: 'free_cancellation',
+    free_cancellation: 'free_cancellation',
+    '免费取消': 'free_cancellation',
+
+    non_refundable: 'non_refundable',
+    no_refund: 'non_refundable',
+    '不可取消': 'non_refundable'
+  };
+
+  return aliasMap[v] || 'free_cancellation';
 };
 
 const normalizeRoomTypes = (arr) => {
   if (!Array.isArray(arr)) return [];
+
   return arr
-    .map(rt => ({
-      // 兼容编辑场景保留 _id（Mongoose 子文档）
-      ...(rt && rt._id ? { _id: rt._id } : {}),
-      type: typeof rt?.type === 'string' ? rt.type.trim() : '',
-      price: Number(rt?.price)
-    }))
+    .map(rt => {
+      const type = typeof rt?.type === 'string' ? rt.type.trim() : '';
+      const price = Number(rt?.price);
+      const bedType = typeof rt?.bedType === 'string' ? rt.bedType.trim() : '';
+      const breakfastIncluded = !!rt?.breakfastIncluded;
+      const cancelPolicy = normalizeCancelPolicy(rt?.cancelPolicy);
+
+      const maxGuestsRaw = Number(rt?.maxGuests);
+      const maxGuests = Number.isFinite(maxGuestsRaw) && maxGuestsRaw >= 1
+        ? Math.min(Math.floor(maxGuestsRaw), 10)
+        : 2;
+
+      const inventoryRaw = Number(rt?.inventory);
+      const inventory = Number.isFinite(inventoryRaw) && inventoryRaw >= 0
+        ? Math.floor(inventoryRaw)
+        : 10;
+
+      const payload = {
+        type,
+        price,
+        bedType,
+        breakfastIncluded,
+        cancelPolicy,
+        maxGuests,
+        inventory
+      };
+
+      // 编辑场景保留子文档 _id
+      if (rt && rt._id) payload._id = rt._id;
+
+      return payload;
+    })
     .filter(rt => rt.type && Number.isFinite(rt.price) && rt.price >= 0);
 };
 
@@ -74,8 +116,12 @@ const buildHotelPayload = (body) => {
     featured: !!body.featured
   };
 
-  // 可选坐标（geo）
-  const hasGeo = body.geo && Array.isArray(body.geo.coordinates) && body.geo.coordinates.length === 2;
+  // 可选坐标
+  const hasGeo =
+    body.geo &&
+    Array.isArray(body.geo.coordinates) &&
+    body.geo.coordinates.length === 2;
+
   if (hasGeo) {
     const lng = Number(body.geo.coordinates[0]);
     const lat = Number(body.geo.coordinates[1]);
@@ -92,6 +138,19 @@ const buildHotelPayload = (body) => {
   return payload;
 };
 
+const roomTypeValidators = [
+  body('type', 'Room type is required').notEmpty(),
+  body('price', 'Room price must be a positive number').isFloat({ min: 0 }),
+  body('bedType').optional().isString().withMessage('Bed type must be a string'),
+  body('breakfastIncluded').optional().isBoolean().withMessage('BreakfastIncluded must be boolean'),
+  body('cancelPolicy')
+    .optional()
+    .isIn(['free_cancellation', 'non_refundable', '免费取消', '不可取消', 'free', 'free_cancel', 'no_refund'])
+    .withMessage('Invalid cancel policy'),
+  body('maxGuests').optional().isInt({ min: 1, max: 10 }).withMessage('Max guests must be 1-10'),
+  body('inventory').optional().isInt({ min: 0 }).withMessage('Inventory must be >= 0')
+];
+
 const hotelValidators = [
   body('nameCn', 'Chinese name is required').notEmpty(),
   body('nameEn', 'English name is required').notEmpty(),
@@ -103,6 +162,14 @@ const hotelValidators = [
   body('roomTypes', 'Room types are required').isArray({ min: 1 }),
   body('roomTypes.*.type', 'Room type is required').notEmpty(),
   body('roomTypes.*.price', 'Room price must be a positive number').isFloat({ min: 0 }),
+  body('roomTypes.*.bedType').optional().isString().withMessage('Room bed type must be a string'),
+  body('roomTypes.*.breakfastIncluded').optional().isBoolean().withMessage('BreakfastIncluded must be boolean'),
+  body('roomTypes.*.cancelPolicy')
+    .optional()
+    .isIn(['free_cancellation', 'non_refundable', '免费取消', '不可取消', 'free', 'free_cancel', 'no_refund'])
+    .withMessage('Invalid room cancel policy'),
+  body('roomTypes.*.maxGuests').optional().isInt({ min: 1, max: 10 }).withMessage('Room max guests must be 1-10'),
+  body('roomTypes.*.inventory').optional().isInt({ min: 0 }).withMessage('Room inventory must be >= 0'),
 
   body('images').optional().isArray().withMessage('Images must be an array'),
   body('images.*').optional().isString().withMessage('Each image must be a string URL'),
@@ -118,7 +185,10 @@ const hotelValidators = [
   body('featured').optional().isBoolean().withMessage('Featured must be boolean'),
 
   body('geo').optional().isObject().withMessage('Geo must be an object'),
-  body('geo.coordinates').optional().isArray({ min: 2, max: 2 }).withMessage('Geo coordinates must be [lng, lat]'),
+  body('geo.coordinates')
+    .optional()
+    .isArray({ min: 2, max: 2 })
+    .withMessage('Geo coordinates must be [lng, lat]'),
   body('geo.coordinates.*').optional().isFloat().withMessage('Geo coordinate must be number')
 ];
 
@@ -180,7 +250,7 @@ router.get('/:id', verifyToken, async (req, res, next) => {
   }
 });
 
-// 更新酒店基础信息/移动端展示字段（商户/管理员） ✅ 新增
+// 更新酒店基础信息/移动端展示字段（商户/管理员）
 router.put(
   '/:id',
   [verifyToken, ...hotelValidators],
@@ -196,11 +266,9 @@ router.put(
       }
 
       const payload = buildHotelPayload(req.body);
-
       Object.assign(hotel, payload);
 
-      // 商户编辑后可选择重新进入待审核（更符合审核流）
-      // 如果你想“编辑后立即生效”，把下面 3 行删掉即可
+      // 商户编辑后重新待审核
       if (req.user.role === 'merchant') {
         hotel.status = 'pending';
         hotel.reason = '';
@@ -265,27 +333,25 @@ router.delete('/:id', verifyToken, async (req, res, next) => {
   }
 });
 
-// 添加房间类型
+// 添加房间类型（增强版字段）
 router.post(
   '/:hotelId/room-types',
-  [
-    verifyToken,
-    body('type', 'Room type is required').notEmpty(),
-    body('price', 'Room price must be a positive number').isFloat({ min: 0 })
-  ],
+  [verifyToken, ...roomTypeValidators],
   async (req, res, next) => {
     if (!validate(req, next)) return;
-
-    const { type, price } = req.body;
 
     try {
       const hotel = await Hotel.findById(req.params.hotelId);
       if (!hotel) return next(new AppError('Hotel not found', 404));
       if (!canAccessHotel(req, hotel)) return next(new AppError('Access denied', 403));
 
-      hotel.roomTypes.push({ type, price: Number(price) });
+      const roomTypePayload = normalizeRoomTypes([req.body])[0];
+      if (!roomTypePayload) {
+        return next(new AppError('Invalid room type payload', 400));
+      }
 
-      // 商户改房型也可能影响端侧价格展示
+      hotel.roomTypes.push(roomTypePayload);
+
       if (req.user.role === 'merchant') {
         hotel.status = 'pending';
         hotel.reason = '';
@@ -300,18 +366,12 @@ router.post(
   }
 );
 
-// 更新房间类型
+// 更新房间类型（增强版字段）
 router.put(
   '/:hotelId/room-types/:roomTypeId',
-  [
-    verifyToken,
-    body('type', 'Room type is required').notEmpty(),
-    body('price', 'Room price must be a positive number').isFloat({ min: 0 })
-  ],
+  [verifyToken, ...roomTypeValidators],
   async (req, res, next) => {
     if (!validate(req, next)) return;
-
-    const { type, price } = req.body;
 
     try {
       const hotel = await Hotel.findById(req.params.hotelId);
@@ -321,8 +381,18 @@ router.put(
       const roomType = hotel.roomTypes.id(req.params.roomTypeId);
       if (!roomType) return next(new AppError('Room type not found', 404));
 
-      roomType.type = type;
-      roomType.price = Number(price);
+      const normalized = normalizeRoomTypes([{ ...req.body, _id: roomType._id }])[0];
+      if (!normalized) {
+        return next(new AppError('Invalid room type payload', 400));
+      }
+
+      roomType.type = normalized.type;
+      roomType.price = normalized.price;
+      roomType.bedType = normalized.bedType;
+      roomType.breakfastIncluded = normalized.breakfastIncluded;
+      roomType.cancelPolicy = normalized.cancelPolicy;
+      roomType.maxGuests = normalized.maxGuests;
+      roomType.inventory = normalized.inventory;
 
       if (req.user.role === 'merchant') {
         hotel.status = 'pending';

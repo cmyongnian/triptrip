@@ -71,3 +71,25 @@ export const publicHotelsAPI = {
         return request(`/public/hotels/${id}`)
     }
 }
+
+export const publicOrdersAPI = {
+    create(data: any) {
+        return request('/public/orders', {
+            method: 'POST',
+            data
+        })
+    },
+
+    queryByPhone(phone: string) {
+        const q = new URLSearchParams()
+        q.append('phone', phone || '')
+        return request(`/public/orders/query?${q.toString()}`)
+    },
+
+    cancel(id: string, data: any) {
+        return request(`/public/orders/${id}/cancel`, {
+            method: 'POST',
+            data
+        })
+    }
+}

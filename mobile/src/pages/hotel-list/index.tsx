@@ -1,785 +1,841 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { View, Text, Image, Picker, Input } from '@tarojs/components'
-import Taro, { usePullDownRefresh, useReachBottom } from '@tarojs/taro'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { View, Text, Image, Input, Picker, ScrollView } from '@tarojs/components'
+import Taro, { useDidShow, usePullDownRefresh, useReachBottom } from '@tarojs/taro'
 import { publicHotelsAPI } from '../../api'
 
+const FAVORITE_KEY = 'triptrip_favorites'
+
+type SortType = 'recommended' | 'priceAsc' | 'priceDesc'
+
 type HotelItem = {
-    id: string
-    name: string
-    city: string
-    address: string
-    starRating: number
-    tags: string[]
-    imageUrl: string
-    minPrice: number
+    id?: string
+    hotelId?: string
+    name?: string
+    city?: string
+    address?: string
+    starRating?: number
+    tags?: string[]
+    amenities?: string[]
+    imageUrl?: string
+    minPrice?: number
     featured?: boolean
 }
 
-type ListResponse = {
-    items: HotelItem[]
+type MetaResp = {
+    cities?: string[]
+    tags?: string[]
+    starRatings?: number[]
+    priceRange?: { min: number; max: number }
+}
+
+type ListResp = {
+    items?: HotelItem[]
     pagination?: {
-        page: number
-        pageSize: number
-        total: number
-        totalPages: number
+        page?: number
+        pageSize?: number
+        total?: number
+        totalPages?: number
     }
 }
 
-type SortType = 'recommended' | 'priceAsc' | 'priceDesc'
-type PriceRangeType = 'all' | '0-300' | '300-500' | '500-800' | '800+'
-
-type FilterState = {
-    city: string
-    keyword: string
-    star: number | null
-    tags: string[]
-    priceRange: PriceRangeType // 前端本地过滤（当前已加载列表）
+function safeDecode(v?: string) {
+    if (!v) return ''
+    try {
+        return decodeURIComponent(v)
+    } catch {
+        return v
+    }
 }
 
-/** 修复中文参数被编码/重复编码显示异常 */
-function safeDecode(value?: string) {
-    if (!value) return ''
-    let result = String(value)
+function formatDate(date: Date) {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+}
 
-    // 兼容可能的重复编码，最多解两次
-    for (let i = 0; i < 2; i++) {
-        try {
-            const decoded = decodeURIComponent(result)
-            if (decoded === result) break
-            result = decoded
-        } catch {
-            break
+function toNum(v: any, fallback = 0) {
+    const n = Number(v)
+    return Number.isFinite(n) ? n : fallback
+}
+
+function normalizeMeta(raw: any): Required<MetaResp> {
+    return {
+        cities: Array.isArray(raw?.cities) ? raw.cities.filter(Boolean) : [],
+        tags: Array.isArray(raw?.tags) ? raw.tags.filter(Boolean) : [],
+        starRatings: Array.isArray(raw?.starRatings) ? raw.starRatings : [3, 4, 5],
+        priceRange: raw?.priceRange || { min: 0, max: 2000 }
+    }
+}
+
+function normalizeListResp(raw: any): Required<ListResp> {
+    // 兼容旧接口：直接返回数组
+    if (Array.isArray(raw)) {
+        return {
+            items: raw,
+            pagination: {
+                page: 1,
+                pageSize: raw.length,
+                total: raw.length,
+                totalPages: 1
+            }
         }
     }
-    return result
+
+    const items = Array.isArray(raw?.items) ? raw.items : []
+    const p = raw?.pagination || {}
+
+    return {
+        items,
+        pagination: {
+            page: toNum(p.page, 1),
+            pageSize: toNum(p.pageSize, items.length || 10),
+            total: toNum(p.total, items.length),
+            totalPages: toNum(p.totalPages, 1)
+        }
+    }
 }
 
-function parseTags(value?: string) {
-    if (!value) return []
-    const decoded = safeDecode(value)
-    return String(decoded)
-        .split(',')
-        .map(s => safeDecode(s.trim()))
-        .filter(Boolean)
+function getHotelId(item: HotelItem) {
+    return String(item?.id || item?.hotelId || '')
 }
 
-function parseStar(value?: string) {
-    if (!value) return null
-    const n = Number(value)
-    return Number.isFinite(n) ? n : null
+function normalizeHotel(item: any): HotelItem {
+    return {
+        id: String(item?.id || item?.hotelId || ''),
+        hotelId: String(item?.hotelId || item?.id || ''),
+        name: item?.name || item?.nameCn || item?.nameEn || '未命名酒店',
+        city: item?.city || '',
+        address: item?.address || '',
+        starRating: toNum(item?.starRating, 0),
+        tags: Array.isArray(item?.tags) ? item.tags.filter(Boolean) : [],
+        amenities: Array.isArray(item?.amenities) ? item.amenities.filter(Boolean) : [],
+        imageUrl: item?.imageUrl || item?.bannerImage || (Array.isArray(item?.images) ? item.images[0] : '') || '',
+        minPrice: toNum(item?.minPrice, 0),
+        featured: !!item?.featured
+    }
 }
 
-function inPriceRange(price: number, range: PriceRangeType) {
-    if (range === 'all') return true
-    if (range === '0-300') return price >= 0 && price < 300
-    if (range === '300-500') return price >= 300 && price < 500
-    if (range === '500-800') return price >= 500 && price < 800
-    if (range === '800+') return price >= 800
-    return true
-}
+const SORT_OPTIONS: { label: string; value: SortType }[] = [
+    { label: '推荐排序', value: 'recommended' },
+    { label: '价格从低到高', value: 'priceAsc' },
+    { label: '价格从高到低', value: 'priceDesc' }
+]
+
+const STAR_OPTIONS = [
+    { label: '不限星级', value: 0 },
+    { label: '3星', value: 3 },
+    { label: '4星', value: 4 },
+    { label: '5星', value: 5 }
+]
 
 export default function HotelListPage() {
     const router = Taro.getCurrentInstance().router
     const params = router?.params || {}
 
-    const decodedCheckIn = safeDecode(params.checkIn || '')
-    const decodedCheckOut = safeDecode(params.checkOut || '')
+    // 兼容首页传参（中文参数解码）
+    const initialKeyword = safeDecode(params.keyword || '')
+    const initialCity = safeDecode(params.city || '')
+    const checkIn = safeDecode(params.checkIn || formatDate(new Date()))
+    const checkOut = safeDecode(
+        params.checkOut || formatDate(new Date(Date.now() + 24 * 3600 * 1000))
+    )
 
-    const initialFilter = useMemo<FilterState>(() => {
-        return {
-            city: safeDecode(params.city || ''),
-            keyword: safeDecode(params.keyword || ''),
-            star: parseStar(params.star),
-            tags: parseTags(params.tags),
-            priceRange: 'all'
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+    const [meta, setMeta] = useState<Required<MetaResp>>({
+        cities: [],
+        tags: [],
+        starRatings: [3, 4, 5],
+        priceRange: { min: 0, max: 2000 }
+    })
 
-    const [items, setItems] = useState<HotelItem[]>([])
+    const [keywordInput, setKeywordInput] = useState(initialKeyword)
+    const [keyword, setKeyword] = useState(initialKeyword)
+    const [city, setCity] = useState(initialCity)
+    const [star, setStar] = useState<number>(0)
+    const [selectedTags, setSelectedTags] = useState<string[]>([])
     const [sort, setSort] = useState<SortType>('recommended')
 
-    // 分页状态
-    const [page, setPage] = useState(1) // 下一次要请求的页码
+    const [list, setList] = useState<HotelItem[]>([])
+    const [page, setPage] = useState(1)
     const [pageSize] = useState(10)
-    const [hasMore, setHasMore] = useState(true)
     const [total, setTotal] = useState(0)
+    const [hasMore, setHasMore] = useState(true)
 
-    // 加载状态
-    const [initialLoading, setInitialLoading] = useState(false)
-    const [refreshing, setRefreshing] = useState(false)
+    const [loading, setLoading] = useState(false)
     const [loadingMore, setLoadingMore] = useState(false)
+    const [favoriteIds, setFavoriteIds] = useState<string[]>([])
 
-    // 错误信息
-    const [errorText, setErrorText] = useState('')
+    const cityPickerOptions = useMemo(() => ['全部城市', ...(meta.cities || [])], [meta.cities])
+    const cityPickerIndex = useMemo(() => {
+        if (!city) return 0
+        const idx = cityPickerOptions.findIndex(c => c === city)
+        return idx >= 0 ? idx : 0
+    }, [city, cityPickerOptions])
 
-    // 防止并发请求
-    const requestingRef = useRef(false)
-
-    // 筛选抽屉
-    const [showFilter, setShowFilter] = useState(false)
-    const [appliedFilter, setAppliedFilter] = useState<FilterState>(initialFilter)
-    const [draftFilter, setDraftFilter] = useState<FilterState>(initialFilter)
-
-    // 元数据（用于筛选项）
-    const [metaCities, setMetaCities] = useState<string[]>([])
-    const [metaTags, setMetaTags] = useState<string[]>([])
-
-    const sortOptions = useMemo(() => ['推荐排序', '价格从低到高', '价格从高到低'], [])
-    const priceOptions = useMemo(
-        () => [
-            { label: '不限', value: 'all' as PriceRangeType },
-            { label: '¥0-300', value: '0-300' as PriceRangeType },
-            { label: '¥300-500', value: '300-500' as PriceRangeType },
-            { label: '¥500-800', value: '500-800' as PriceRangeType },
-            { label: '¥800+', value: '800+' as PriceRangeType }
-        ],
-        []
+    const sortPickerOptions = useMemo(() => SORT_OPTIONS.map(s => s.label), [])
+    const sortPickerIndex = useMemo(
+        () => Math.max(0, SORT_OPTIONS.findIndex(s => s.value === sort)),
+        [sort]
     )
 
-    const sortIndex = useMemo(() => {
-        const map: SortType[] = ['recommended', 'priceAsc', 'priceDesc']
-        return Math.max(0, map.indexOf(sort))
-    }, [sort])
+    const starPickerOptions = useMemo(() => STAR_OPTIONS.map(s => s.label), [])
+    const starPickerIndex = useMemo(() => {
+        const idx = STAR_OPTIONS.findIndex(s => s.value === star)
+        return idx >= 0 ? idx : 0
+    }, [star])
 
-    const visibleItems = useMemo(() => {
-        return items.filter(item => inPriceRange(Number(item.minPrice || 0), appliedFilter.priceRange))
-    }, [items, appliedFilter.priceRange])
+    const activeFilterCount = useMemo(() => {
+        let c = 0
+        if (keyword.trim()) c += 1
+        if (city) c += 1
+        if (star) c += 1
+        if (selectedTags.length) c += 1
+        if (sort !== 'recommended') c += 1
+        return c
+    }, [keyword, city, star, selectedTags, sort])
 
-    const filterSummaryText = useMemo(() => {
-        const parts: string[] = []
-        if (appliedFilter.city) parts.push(`城市:${appliedFilter.city}`)
-        if (appliedFilter.keyword) parts.push(`关键词:${appliedFilter.keyword}`)
-        if (appliedFilter.star) parts.push(`${appliedFilter.star}星`)
-        if (appliedFilter.tags.length) parts.push(`标签:${appliedFilter.tags.join('、')}`)
-        if (appliedFilter.priceRange !== 'all') {
-            const priceLabel = priceOptions.find(p => p.value === appliedFilter.priceRange)?.label || appliedFilter.priceRange
-            parts.push(`价格:${priceLabel}`)
-        }
-        return parts.length ? parts : ['无']
-    }, [appliedFilter, priceOptions])
+    const syncFavorites = useCallback(() => {
+        const raw = Taro.getStorageSync(FAVORITE_KEY)
+        const arr = Array.isArray(raw) ? raw.map(String) : []
+        setFavoriteIds(arr)
+    }, [])
 
-    const buildQuery = useCallback(
-        (targetPage: number, targetSort: SortType, targetFilter: FilterState) => ({
-            city: targetFilter.city || undefined,
-            keyword: targetFilter.keyword || undefined,
-            checkIn: safeDecode(params.checkIn || '') || undefined,
-            checkOut: safeDecode(params.checkOut || '') || undefined,
-            star: targetFilter.star ?? undefined,
-            tags: targetFilter.tags.length ? targetFilter.tags.join(',') : undefined,
-            page: targetPage,
-            pageSize,
-            sort: targetSort
-        }),
-        [params.checkIn, params.checkOut, pageSize]
-    )
-
-    const loadMetaForFilters = useCallback(async () => {
+    const fetchMeta = useCallback(async () => {
         try {
-            const res: any = await publicHotelsAPI.getMeta()
-            setMetaCities(Array.isArray(res?.cities) ? res.cities : [])
-            setMetaTags(Array.isArray(res?.tags) ? res.tags : [])
-        } catch {
-            // 元数据失败不阻断列表
+            const raw = await publicHotelsAPI.getMeta()
+            const m = normalizeMeta(raw)
+            setMeta(m)
+        } catch (e: any) {
+            console.error('getMeta error', e)
+            // 不阻塞列表
         }
     }, [])
 
-    const loadList = useCallback(
-        async (
-            targetSort: SortType = sort,
-            targetFilter: FilterState = appliedFilter,
-            options?: { reset?: boolean; source?: 'init' | 'refresh' | 'loadMore' | 'sort' | 'retry' | 'filter' }
-        ) => {
-            const reset = options?.reset ?? false
-            const source = options?.source || 'init'
+    const buildQueryParams = useCallback(
+        (targetPage: number) => {
+            const p: Record<string, any> = {
+                page: targetPage,
+                pageSize,
+                sort
+            }
 
-            if (requestingRef.current) return
-            if (!reset && !hasMore) return
+            if (keyword.trim()) p.keyword = keyword.trim()
+            if (city) p.city = city
+            if (star) p.star = star
+            if (selectedTags.length) p.tags = selectedTags.join(',')
 
-            requestingRef.current = true
-            const requestPage = reset ? 1 : page
+            return p
+        },
+        [pageSize, sort, keyword, city, star, selectedTags]
+    )
 
-            if (source === 'init' || source === 'sort' || source === 'retry' || source === 'filter') {
-                setInitialLoading(true)
-            } else if (source === 'refresh') {
-                setRefreshing(true)
-            } else if (source === 'loadMore') {
+    const fetchList = useCallback(
+        async (opts?: { reset?: boolean }) => {
+            const reset = !!opts?.reset
+            const targetPage = reset ? 1 : page
+
+            if (reset) {
+                setLoading(true)
+            } else {
+                if (loadingMore || loading) return
                 setLoadingMore(true)
             }
 
-            if (reset) setErrorText('')
-
             try {
-                const res = (await publicHotelsAPI.getList(
-                    buildQuery(requestPage, targetSort, targetFilter)
-                )) as ListResponse
+                const raw = await publicHotelsAPI.getList(buildQueryParams(targetPage))
+                const res = normalizeListResp(raw)
+                const items = (res.items || []).map(normalizeHotel)
 
-                const newItems = Array.isArray(res.items) ? res.items : []
-                const pagination = res.pagination || {
-                    page: requestPage,
-                    pageSize,
-                    total: newItems.length,
-                    totalPages: newItems.length > 0 ? 1 : 0
-                }
+                setList(prev => (reset ? items : [...prev, ...items]))
+                setTotal(toNum(res.pagination?.total, items.length))
+                setPage(toNum(res.pagination?.page, targetPage))
 
-                setItems(prev => {
-                    if (reset) return newItems
-                    const map = new Map<string, HotelItem>()
-                        ;[...prev, ...newItems].forEach(item => {
-                            if (item?.id) map.set(item.id, item)
-                        })
-                    return Array.from(map.values())
-                })
-
-                const totalPages = Number(pagination.totalPages || 0)
-                const currentPage = Number(pagination.page || requestPage)
-
-                setTotal(Number(pagination.total || 0))
-                setPage(currentPage + 1)
-                setHasMore(totalPages > 0 ? currentPage < totalPages : false)
-                setErrorText('')
+                const totalPages = toNum(res.pagination?.totalPages, 1)
+                const currentPage = toNum(res.pagination?.page, targetPage)
+                setHasMore(currentPage < totalPages)
             } catch (e: any) {
-                const msg = e?.message || '加载失败'
-                setErrorText(msg)
-
-                if (reset) {
-                    setItems([])
-                    setHasMore(false)
-                    setPage(1)
-                    setTotal(0)
-                }
-
-                Taro.showToast({ title: msg, icon: 'none' })
+                console.error('getList error', e)
+                Taro.showToast({ title: e?.message || '加载失败', icon: 'none' })
             } finally {
-                requestingRef.current = false
-                setInitialLoading(false)
-                setRefreshing(false)
+                setLoading(false)
                 setLoadingMore(false)
                 Taro.stopPullDownRefresh()
             }
         },
-        [sort, appliedFilter, hasMore, page, pageSize, buildQuery]
+        [page, loading, loadingMore, buildQueryParams]
     )
 
+    const reloadFirstPage = useCallback(async () => {
+        setPage(1)
+        setHasMore(true)
+        await fetchList({ reset: true })
+    }, [fetchList])
+
+    // 初始化：先拉 meta，再拉列表
     useEffect(() => {
-        loadMetaForFilters()
-        setPage(1)
-        setHasMore(true)
-        loadList(sort, initialFilter, { reset: true, source: 'init' })
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+        ; (async () => {
+            syncFavorites()
+            await fetchMeta()
+            await fetchList({ reset: true })
+        })()
+    }, [fetchMeta, fetchList, syncFavorites])
 
+    // 页面回显时同步收藏状态
+    useDidShow(() => {
+        syncFavorites()
+    })
+
+    // 下拉刷新
     usePullDownRefresh(() => {
-        setPage(1)
-        setHasMore(true)
-        loadList(sort, appliedFilter, { reset: true, source: 'refresh' })
+        reloadFirstPage()
     })
 
+    // 触底加载
     useReachBottom(() => {
-        if (requestingRef.current || !hasMore) return
-        loadList(sort, appliedFilter, { reset: false, source: 'loadMore' })
+        if (loading || loadingMore || !hasMore) return
+        setPage(prev => prev + 1)
     })
 
-    const onChangeSort = (idx: number) => {
-        const map: SortType[] = ['recommended', 'priceAsc', 'priceDesc']
-        const nextSort = map[idx] || 'recommended'
-        if (nextSort === sort) return
+    // page 改变时（且不是第一页）加载下一页
+    useEffect(() => {
+        if (page <= 1) return
+        fetchList({ reset: false })
+    }, [page, fetchList])
 
-        setSort(nextSort)
-        setPage(1)
-        setHasMore(true)
-        loadList(nextSort, appliedFilter, { reset: true, source: 'sort' })
+    const handleSearch = async () => {
+        setKeyword(keywordInput.trim())
+        // 注意：setState 异步，直接用临时值避免时序问题
+        setTimeout(() => {
+            reloadFirstPage()
+        }, 0)
     }
 
-    const onRetry = () => {
-        setPage(1)
-        setHasMore(true)
-        loadList(sort, appliedFilter, { reset: true, source: 'retry' })
+    const handleResetFilters = async () => {
+        setKeywordInput('')
+        setKeyword('')
+        setCity('')
+        setStar(0)
+        setSelectedTags([])
+        setSort('recommended')
+
+        setTimeout(() => {
+            reloadFirstPage()
+        }, 0)
     }
 
-    const openFilterDrawer = () => {
-        setDraftFilter({ ...appliedFilter, tags: [...appliedFilter.tags] })
-        setShowFilter(true)
+    const applyFiltersNow = async () => {
+        setTimeout(() => {
+            reloadFirstPage()
+        }, 0)
     }
 
-    const closeFilterDrawer = () => setShowFilter(false)
-
-    const toggleDraftTag = (tag: string) => {
-        setDraftFilter(prev => {
-            const exists = prev.tags.includes(tag)
-            return {
-                ...prev,
-                tags: exists ? prev.tags.filter(t => t !== tag) : [...prev.tags, tag]
+    const toggleTag = (tag: string) => {
+        setSelectedTags(prev => {
+            if (prev.includes(tag)) {
+                return prev.filter(t => t !== tag)
             }
+            return [...prev, tag]
         })
     }
 
-    const resetDraftFilter = () => {
-        setDraftFilter({
-            city: '',
-            keyword: '',
-            star: null,
-            tags: [],
-            priceRange: 'all'
-        })
-    }
+    const toggleFavorite = (hotel: HotelItem, e?: any) => {
+        e?.stopPropagation?.()
 
-    const applyFilterAndSearch = () => {
-        const next = {
-            ...draftFilter,
-            keyword: (draftFilter.keyword || '').trim()
+        const id = getHotelId(hotel)
+        if (!id) return
+
+        const raw = Taro.getStorageSync(FAVORITE_KEY)
+        const arr: string[] = Array.isArray(raw) ? raw.map(String) : []
+
+        if (arr.includes(id)) {
+            const next = arr.filter(x => x !== id)
+            Taro.setStorageSync(FAVORITE_KEY, next)
+            setFavoriteIds(next)
+            Taro.showToast({ title: '已取消收藏', icon: 'none' })
+        } else {
+            const next = [id, ...arr.filter(x => x !== id)].slice(0, 100)
+            Taro.setStorageSync(FAVORITE_KEY, next)
+            setFavoriteIds(next)
+            Taro.showToast({ title: '已收藏', icon: 'none' })
         }
-        setAppliedFilter(next)
-        setShowFilter(false)
-        setPage(1)
-        setHasMore(true)
-        loadList(sort, next, { reset: true, source: 'filter' })
     }
 
-    const onClickHotel = (hotelId: string) => {
-        const q = new URLSearchParams({
-            id: hotelId,
-            checkIn: decodedCheckIn || '',
-            checkOut: decodedCheckOut || ''
-        }).toString()
-        Taro.navigateTo({ url: `/pages/hotel-detail/index?${q}` })
+    const goDetail = (hotel: HotelItem) => {
+        const id = getHotelId(hotel)
+        if (!id) {
+            Taro.showToast({ title: '酒店ID缺失', icon: 'none' })
+            return
+        }
+
+        Taro.navigateTo({
+            url: `/pages/hotel-detail/index?id=${encodeURIComponent(id)}&checkIn=${encodeURIComponent(
+                checkIn
+            )}&checkOut=${encodeURIComponent(checkOut)}`
+        })
     }
 
-    return (
-        <View style={{ padding: '12px', background: '#f6f7fb', minHeight: '100vh' }}>
-            {/* 顶部条件卡片 */}
-            <View style={{ marginBottom: '12px', background: '#fff', borderRadius: '10px', padding: '10px' }}>
-                <Text style={{ fontWeight: 600 }}>搜索条件</Text>
+    const renderHotelCard = (item: HotelItem, index: number) => {
+        const id = getHotelId(item)
+        const isFav = favoriteIds.includes(id)
+        const tags = Array.isArray(item.tags) ? item.tags.slice(0, 4) : []
+        const img = item.imageUrl || ''
+        const minPrice = toNum(item.minPrice, 0)
 
-                <View style={{ marginTop: '8px', color: '#666', fontSize: '14px' }}>
-                    <Text>城市：{appliedFilter.city || '不限'}</Text>
-                </View>
-
-                <View style={{ marginTop: '4px', color: '#666', fontSize: '14px' }}>
-                    <Text>关键词：{appliedFilter.keyword || '无'}</Text>
-                </View>
-
-                <View style={{ marginTop: '4px', color: '#666', fontSize: '14px' }}>
-                    <Text>
-                        日期：{decodedCheckIn || '-'} ~ {decodedCheckOut || '-'}
-                    </Text>
-                </View>
-
-                <View style={{ marginTop: '4px', color: '#666', fontSize: '14px' }}>
-                    <Text>
-                        星级：{appliedFilter.star ? `${appliedFilter.star}星` : '不限'}
-                    </Text>
-                </View>
-
-                <View style={{ marginTop: '4px', color: '#666', fontSize: '14px' }}>
-                    <Text>标签：{appliedFilter.tags.length ? appliedFilter.tags.join('、') : '无'}</Text>
-                </View>
-
-                <View style={{ marginTop: '4px', color: '#666', fontSize: '14px' }}>
-                    <Text>结果：服务端共 {total} 条（当前展示 {visibleItems.length} 条）</Text>
-                </View>
-
-                <View style={{ marginTop: '10px', display: 'flex' }}>
-                    <View style={{ flex: 1, marginRight: '8px' }}>
-                        <Picker mode='selector' range={sortOptions} onChange={(e) => onChangeSort(Number(e.detail.value))}>
-                            <View style={{ border: '1px solid #ddd', borderRadius: '8px', padding: '8px 10px', background: '#fff' }}>
-                                排序：{sortOptions[sortIndex]}
-                            </View>
-                        </Picker>
-                    </View>
-
-                    <View
-                        onClick={openFilterDrawer}
-                        style={{
-                            padding: '8px 12px',
-                            borderRadius: '8px',
-                            border: '1px solid #1677ff',
-                            color: '#1677ff',
-                            background: '#f0f7ff'
-                        }}
-                    >
-                        详细筛选
-                    </View>
-                </View>
-
-                <View style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap' }}>
-                    {filterSummaryText.map((txt, idx) => (
-                        <View
-                            key={`${txt}-${idx}`}
-                            style={{
-                                marginRight: '6px',
-                                marginBottom: '6px',
-                                fontSize: '12px',
-                                color: '#1677ff',
-                                border: '1px solid #cfe2ff',
-                                background: '#f0f7ff',
-                                borderRadius: '999px',
-                                padding: '2px 8px'
-                            }}
-                        >
-                            {txt}
-                        </View>
-                    ))}
-                </View>
-            </View>
-
-            {/* 初始加载态 */}
-            {initialLoading && items.length === 0 ? (
-                <View style={{ textAlign: 'center', color: '#999', padding: '30px 0' }}>
-                    加载中...
-                </View>
-            ) : null}
-
-            {/* 空态 */}
-            {!initialLoading && !refreshing && visibleItems.length === 0 && !errorText ? (
-                <View
-                    style={{
-                        textAlign: 'center',
-                        color: '#999',
-                        padding: '30px 0',
-                        background: '#fff',
-                        borderRadius: '12px'
-                    }}
-                >
-                    暂无符合条件的酒店
-                </View>
-            ) : null}
-
-            {/* 错误态 */}
-            {!initialLoading && items.length === 0 && !!errorText ? (
-                <View
-                    style={{
-                        textAlign: 'center',
-                        padding: '20px 12px',
-                        background: '#fff',
-                        borderRadius: '12px'
-                    }}
-                >
-                    <Text style={{ color: '#ff4d4f' }}>{errorText}</Text>
+        return (
+            <View
+                key={`${id || index}`}
+                onClick={() => goDetail(item)}
+                style={{
+                    background: '#fff',
+                    borderRadius: '20rpx',
+                    marginBottom: '16rpx',
+                    padding: '16rpx',
+                    boxSizing: 'border-box'
+                }}
+            >
+                <View style={{ display: 'flex', gap: '16rpx' }}>
+                    {/* 左侧图片 */}
                     <View
                         style={{
-                            marginTop: '10px',
-                            display: 'inline-block',
-                            padding: '8px 12px',
-                            borderRadius: '8px',
-                            border: '1px solid #ddd',
-                            color: '#333'
+                            width: '220rpx',
+                            height: '170rpx',
+                            borderRadius: '16rpx',
+                            overflow: 'hidden',
+                            background: '#f2f3f5',
+                            flexShrink: 0,
+                            position: 'relative'
                         }}
-                        onClick={onRetry}
                     >
-                        点击重试
-                    </View>
-                </View>
-            ) : null}
-
-            {/* 列表 */}
-            {visibleItems.map(item => (
-                <View
-                    key={item.id}
-                    style={{
-                        background: '#fff',
-                        borderRadius: '12px',
-                        padding: '10px',
-                        marginBottom: '12px'
-                    }}
-                    onClick={() => onClickHotel(item.id)}
-                >
-                    <View style={{ position: 'relative' }}>
-                        {item.imageUrl ? (
+                        {img ? (
                             <Image
-                                src={item.imageUrl}
+                                src={img}
                                 mode='aspectFill'
-                                style={{ width: '100%', height: '160px', borderRadius: '10px', background: '#f2f2f2' }}
+                                style={{ width: '220rpx', height: '170rpx' }}
                             />
                         ) : (
-                            <View style={{ height: '160px', borderRadius: '10px', background: '#f2f2f2' }} />
+                            <View
+                                style={{
+                                    width: '220rpx',
+                                    height: '170rpx',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: '#999',
+                                    fontSize: '24rpx'
+                                }}
+                            >
+                                暂无图片
+                            </View>
                         )}
 
                         {item.featured ? (
                             <View
                                 style={{
                                     position: 'absolute',
-                                    left: '8px',
-                                    top: '8px',
-                                    background: 'rgba(250,140,22,.9)',
+                                    left: '10rpx',
+                                    top: '10rpx',
+                                    background: '#ff7a45',
                                     color: '#fff',
-                                    borderRadius: '999px',
-                                    fontSize: '12px',
-                                    padding: '2px 8px'
+                                    fontSize: '20rpx',
+                                    padding: '4rpx 10rpx',
+                                    borderRadius: '999rpx'
                                 }}
                             >
-                                精选推荐
+                                精选
                             </View>
                         ) : null}
                     </View>
 
-                    <View style={{ marginTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={{ fontWeight: 600, maxWidth: '75%' }}>{item.name}</Text>
-                        <Text style={{ color: '#1677ff', fontSize: '14px' }}>{item.starRating}星</Text>
-                    </View>
+                    {/* 右侧内容 */}
+                    <View style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                        <View style={{ display: 'flex', justifyContent: 'space-between', gap: '12rpx' }}>
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                                <Text
+                                    style={{
+                                        fontSize: '28rpx',
+                                        fontWeight: 700,
+                                        color: '#222',
+                                        display: 'block'
+                                    }}
+                                    numberOfLines={1}
+                                >
+                                    {item.name || '未命名酒店'}
+                                </Text>
 
-                    <View style={{ marginTop: '6px', color: '#666', fontSize: '14px' }}>
-                        {item.address}
-                    </View>
+                                <View style={{ marginTop: '6rpx', display: 'flex', alignItems: 'center', gap: '8rpx', flexWrap: 'wrap' }}>
+                                    {!!item.starRating && (
+                                        <Text
+                                            style={{
+                                                fontSize: '20rpx',
+                                                color: '#c58a00',
+                                                background: '#fff8db',
+                                                padding: '4rpx 10rpx',
+                                                borderRadius: '10rpx'
+                                            }}
+                                        >
+                                            {item.starRating}星
+                                        </Text>
+                                    )}
+                                    {!!item.city && (
+                                        <Text style={{ fontSize: '22rpx', color: '#666' }}>{item.city}</Text>
+                                    )}
+                                </View>
+                            </View>
 
-                    <View style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap' }}>
-                        {(item.tags || []).slice(0, 4).map(tag => (
                             <View
-                                key={tag}
+                                onClick={(e) => toggleFavorite(item, e)}
                                 style={{
-                                    marginRight: '6px',
-                                    marginBottom: '6px',
-                                    fontSize: '12px',
-                                    color: '#1677ff',
-                                    border: '1px solid #cfe2ff',
-                                    borderRadius: '999px',
-                                    padding: '2px 8px',
-                                    background: '#f0f7ff'
+                                    width: '62rpx',
+                                    height: '62rpx',
+                                    borderRadius: '14rpx',
+                                    border: '1px solid #eee',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: isFav ? '#faad14' : '#999',
+                                    background: '#fff',
+                                    flexShrink: 0
                                 }}
                             >
-                                {tag}
+                                <Text style={{ fontSize: '28rpx' }}>{isFav ? '★' : '☆'}</Text>
                             </View>
-                        ))}
-                    </View>
-
-                    <View style={{ marginTop: '10px', textAlign: 'right' }}>
-                        <Text style={{ color: '#ff4d4f', fontWeight: 600 }}>¥{item.minPrice}</Text>
-                        <Text style={{ color: '#999', fontSize: '12px' }}> 起/晚</Text>
-                    </View>
-                </View>
-            ))}
-
-            {/* 底部状态 */}
-            {items.length > 0 ? (
-                <View style={{ textAlign: 'center', color: '#999', padding: '6px 0 20px', fontSize: '13px' }}>
-                    {refreshing
-                        ? '刷新中...'
-                        : loadingMore
-                            ? '加载更多中...'
-                            : hasMore
-                                ? '上拉/触底加载更多'
-                                : '没有更多了'}
-                    {appliedFilter.priceRange !== 'all' ? '（价格档位为前端本地过滤）' : ''}
-                </View>
-            ) : null}
-
-            {/* 详细筛选抽屉（前端版） */}
-            {showFilter ? (
-                <View
-                    style={{
-                        position: 'fixed',
-                        left: 0,
-                        right: 0,
-                        top: 0,
-                        bottom: 0,
-                        zIndex: 1000
-                    }}
-                >
-                    {/* 遮罩 */}
-                    <View
-                        onClick={closeFilterDrawer}
-                        style={{
-                            position: 'absolute',
-                            left: 0,
-                            right: 0,
-                            top: 0,
-                            bottom: 0,
-                            background: 'rgba(0,0,0,.35)'
-                        }}
-                    />
-
-                    {/* 面板 */}
-                    <View
-                        style={{
-                            position: 'absolute',
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            background: '#fff',
-                            borderTopLeftRadius: '16px',
-                            borderTopRightRadius: '16px',
-                            padding: '14px',
-                            maxHeight: '75vh',
-                            overflow: 'scroll'
-                        }}
-                    >
-                        <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Text style={{ fontWeight: 700 }}>详细筛选</Text>
-                            <Text onClick={closeFilterDrawer} style={{ color: '#999' }}>关闭</Text>
                         </View>
 
-                        {/* 城市 */}
-                        <Text style={{ marginTop: '14px', display: 'block', fontWeight: 600 }}>城市</Text>
-                        {metaCities.length ? (
-                            <Picker
-                                mode='selector'
-                                range={['不限', ...metaCities]}
-                                onChange={(e) => {
-                                    const idx = Number(e.detail.value)
-                                    if (idx === 0) {
-                                        setDraftFilter(prev => ({ ...prev, city: '' }))
-                                    } else {
-                                        setDraftFilter(prev => ({ ...prev, city: metaCities[idx - 1] }))
-                                    }
-                                }}
-                            >
-                                <View
-                                    style={{
-                                        marginTop: '8px',
-                                        border: '1px solid #ddd',
-                                        borderRadius: '8px',
-                                        padding: '10px'
-                                    }}
-                                >
-                                    {draftFilter.city || '不限'}
-                                </View>
-                            </Picker>
-                        ) : (
-                            <View
+                        {!!item.address && (
+                            <Text
                                 style={{
-                                    marginTop: '8px',
-                                    border: '1px solid #ddd',
-                                    borderRadius: '8px',
-                                    padding: '10px',
-                                    color: '#999'
+                                    marginTop: '8rpx',
+                                    fontSize: '22rpx',
+                                    color: '#888',
+                                    display: 'block'
                                 }}
+                                numberOfLines={1}
                             >
-                                暂无城市选项（可直接用首页选择）
+                                {item.address}
+                            </Text>
+                        )}
+
+                        {!!tags.length && (
+                            <View style={{ marginTop: '10rpx', display: 'flex', gap: '8rpx', flexWrap: 'wrap' }}>
+                                {tags.map((tag, idx) => (
+                                    <Text
+                                        key={`${tag}-${idx}`}
+                                        style={{
+                                            fontSize: '20rpx',
+                                            color: '#1677ff',
+                                            background: '#eef5ff',
+                                            padding: '4rpx 10rpx',
+                                            borderRadius: '999rpx'
+                                        }}
+                                    >
+                                        {tag}
+                                    </Text>
+                                ))}
                             </View>
                         )}
 
-                        {/* 关键词 */}
-                        <Text style={{ marginTop: '14px', display: 'block', fontWeight: 600 }}>关键词</Text>
-                        <Input
-                            value={draftFilter.keyword}
-                            onInput={(e) => setDraftFilter(prev => ({ ...prev, keyword: e.detail.value }))}
-                            placeholder='酒店名/商圈/地标'
+                        <View
                             style={{
-                                marginTop: '8px',
-                                border: '1px solid #ddd',
-                                borderRadius: '8px',
-                                padding: '10px'
+                                marginTop: 'auto',
+                                paddingTop: '12rpx',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'flex-end'
                             }}
-                        />
-
-                        {/* 星级 */}
-                        <Text style={{ marginTop: '14px', display: 'block', fontWeight: 600 }}>星级</Text>
-                        <View style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap' }}>
-                            {[
-                                { label: '不限', value: null },
-                                { label: '3星', value: 3 },
-                                { label: '4星', value: 4 },
-                                { label: '5星', value: 5 }
-                            ].map(opt => {
-                                const active = draftFilter.star === opt.value
-                                return (
-                                    <View
-                                        key={String(opt.value)}
-                                        onClick={() => setDraftFilter(prev => ({ ...prev, star: opt.value }))}
-                                        style={{
-                                            marginRight: '8px',
-                                            marginBottom: '8px',
-                                            padding: '6px 10px',
-                                            borderRadius: '999px',
-                                            border: active ? '1px solid #1677ff' : '1px solid #ddd',
-                                            color: active ? '#1677ff' : '#333',
-                                            background: active ? '#f0f7ff' : '#fff'
-                                        }}
-                                    >
-                                        {opt.label}
-                                    </View>
-                                )
-                            })}
+                        >
+                            <Text style={{ fontSize: '20rpx', color: '#999' }}>
+                                {checkIn} - {checkOut}
+                            </Text>
+                            <View>
+                                <Text style={{ fontSize: '20rpx', color: '#ff4d4f' }}>¥</Text>
+                                <Text style={{ fontSize: '34rpx', color: '#ff4d4f', fontWeight: 700 }}>
+                                    {minPrice}
+                                </Text>
+                                <Text style={{ fontSize: '20rpx', color: '#999' }}>/晚起</Text>
+                            </View>
                         </View>
+                    </View>
+                </View>
+            </View>
+        )
+    }
 
-                        {/* 标签 */}
-                        <Text style={{ marginTop: '14px', display: 'block', fontWeight: 600 }}>标签</Text>
-                        <View style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap' }}>
-                            {(metaTags.length ? metaTags : []).map(tag => {
-                                const active = draftFilter.tags.includes(tag)
+    return (
+        <View style={{ minHeight: '100vh', background: '#f5f7fb' }}>
+            {/* 顶部搜索栏 */}
+            <View
+                style={{
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 20,
+                    background: '#fff',
+                    padding: '16rpx 20rpx 12rpx',
+                    borderBottom: '1px solid #f0f0f0'
+                }}
+            >
+                <View
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12rpx'
+                    }}
+                >
+                    <View
+                        style={{
+                            flex: 1,
+                            background: '#f5f7fb',
+                            borderRadius: '16rpx',
+                            padding: '0 16rpx',
+                            height: '72rpx',
+                            display: 'flex',
+                            alignItems: 'center',
+                            boxSizing: 'border-box'
+                        }}
+                    >
+                        <Input
+                            value={keywordInput}
+                            placeholder='搜索酒店名 / 城市 / 地址'
+                            onInput={(e) => setKeywordInput(e.detail.value)}
+                            onConfirm={handleSearch}
+                            style={{ width: '100%', fontSize: '26rpx' }}
+                            confirmType='search'
+                        />
+                    </View>
+
+                    <View
+                        onClick={handleSearch}
+                        style={{
+                            width: '120rpx',
+                            height: '72rpx',
+                            borderRadius: '16rpx',
+                            background: '#1677ff',
+                            color: '#fff',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '26rpx',
+                            fontWeight: 600
+                        }}
+                    >
+                        搜索
+                    </View>
+                </View>
+
+                {/* 日期展示（从首页透传过来） */}
+                <View style={{ marginTop: '10rpx', display: 'flex', alignItems: 'center', gap: '12rpx', flexWrap: 'wrap' }}>
+                    <Text style={{ fontSize: '22rpx', color: '#666' }}>入住：{checkIn}</Text>
+                    <Text style={{ fontSize: '22rpx', color: '#666' }}>离店：{checkOut}</Text>
+                    {activeFilterCount > 0 ? (
+                        <Text
+                            style={{
+                                fontSize: '20rpx',
+                                color: '#1677ff',
+                                background: '#eef5ff',
+                                padding: '4rpx 10rpx',
+                                borderRadius: '999rpx'
+                            }}
+                        >
+                            已启用 {activeFilterCount} 项筛选
+                        </Text>
+                    ) : null}
+                </View>
+            </View>
+
+            {/* 筛选栏 */}
+            <View
+                style={{
+                    background: '#fff',
+                    padding: '12rpx 20rpx 16rpx',
+                    borderBottom: '1px solid #f5f5f5'
+                }}
+            >
+                <View style={{ display: 'flex', gap: '12rpx', flexWrap: 'wrap' }}>
+                    {/* 城市 */}
+                    <Picker
+                        mode='selector'
+                        range={cityPickerOptions}
+                        value={cityPickerIndex}
+                        onChange={(e) => {
+                            const idx = Number(e.detail.value || 0)
+                            const picked = cityPickerOptions[idx]
+                            setCity(picked === '全部城市' ? '' : picked)
+                            setTimeout(() => applyFiltersNow(), 0)
+                        }}
+                    >
+                        <View
+                            style={{
+                                padding: '10rpx 16rpx',
+                                borderRadius: '999rpx',
+                                background: city ? '#eef5ff' : '#f5f7fb',
+                                color: city ? '#1677ff' : '#333',
+                                fontSize: '24rpx'
+                            }}
+                        >
+                            {city || '全部城市'} ▾
+                        </View>
+                    </Picker>
+
+                    {/* 星级 */}
+                    <Picker
+                        mode='selector'
+                        range={starPickerOptions}
+                        value={starPickerIndex}
+                        onChange={(e) => {
+                            const idx = Number(e.detail.value || 0)
+                            const picked = STAR_OPTIONS[idx]
+                            setStar(picked?.value || 0)
+                            setTimeout(() => applyFiltersNow(), 0)
+                        }}
+                    >
+                        <View
+                            style={{
+                                padding: '10rpx 16rpx',
+                                borderRadius: '999rpx',
+                                background: star ? '#eef5ff' : '#f5f7fb',
+                                color: star ? '#1677ff' : '#333',
+                                fontSize: '24rpx'
+                            }}
+                        >
+                            {star ? `${star}星` : '不限星级'} ▾
+                        </View>
+                    </Picker>
+
+                    {/* 排序 */}
+                    <Picker
+                        mode='selector'
+                        range={sortPickerOptions}
+                        value={sortPickerIndex}
+                        onChange={(e) => {
+                            const idx = Number(e.detail.value || 0)
+                            const picked = SORT_OPTIONS[idx]
+                            setSort((picked?.value || 'recommended') as SortType)
+                            setTimeout(() => applyFiltersNow(), 0)
+                        }}
+                    >
+                        <View
+                            style={{
+                                padding: '10rpx 16rpx',
+                                borderRadius: '999rpx',
+                                background: sort !== 'recommended' ? '#eef5ff' : '#f5f7fb',
+                                color: sort !== 'recommended' ? '#1677ff' : '#333',
+                                fontSize: '24rpx'
+                            }}
+                        >
+                            {SORT_OPTIONS.find(s => s.value === sort)?.label || '推荐排序'} ▾
+                        </View>
+                    </Picker>
+
+                    {/* 重置 */}
+                    <View
+                        onClick={handleResetFilters}
+                        style={{
+                            padding: '10rpx 16rpx',
+                            borderRadius: '999rpx',
+                            background: '#fff7e8',
+                            color: '#ad6800',
+                            fontSize: '24rpx'
+                        }}
+                    >
+                        重置筛选
+                    </View>
+                </View>
+
+                {/* 标签筛选（横向滚动） */}
+                {!!meta.tags.length && (
+                    <ScrollView
+                        scrollX
+                        enhanced
+                        showScrollbar={false}
+                        style={{ marginTop: '14rpx', whiteSpace: 'nowrap' }}
+                    >
+                        <View style={{ display: 'flex', gap: '10rpx', paddingBottom: '4rpx' }}>
+                            {meta.tags.map((tag, idx) => {
+                                const active = selectedTags.includes(tag)
                                 return (
                                     <View
-                                        key={tag}
-                                        onClick={() => toggleDraftTag(tag)}
+                                        key={`${tag}-${idx}`}
+                                        onClick={() => {
+                                            toggleTag(tag)
+                                            setTimeout(() => applyFiltersNow(), 0)
+                                        }}
                                         style={{
-                                            marginRight: '8px',
-                                            marginBottom: '8px',
-                                            padding: '6px 10px',
-                                            borderRadius: '999px',
-                                            border: active ? '1px solid #1677ff' : '1px solid #ddd',
-                                            color: active ? '#1677ff' : '#333',
-                                            background: active ? '#f0f7ff' : '#fff'
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            padding: '8rpx 14rpx',
+                                            borderRadius: '999rpx',
+                                            background: active ? '#1677ff' : '#f5f7fb',
+                                            color: active ? '#fff' : '#333',
+                                            fontSize: '22rpx',
+                                            flexShrink: 0
                                         }}
                                     >
                                         {tag}
                                     </View>
                                 )
                             })}
-                            {!metaTags.length ? (
-                                <Text style={{ color: '#999', fontSize: '12px' }}>暂无标签选项</Text>
-                            ) : null}
                         </View>
+                    </ScrollView>
+                )}
+            </View>
 
-                        {/* 价格档位（前端本地过滤） */}
-                        <Text style={{ marginTop: '14px', display: 'block', fontWeight: 600 }}>
-                            价格档位（当前页已加载数据）
-                        </Text>
-                        <View style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap' }}>
-                            {priceOptions.map(opt => {
-                                const active = draftFilter.priceRange === opt.value
-                                return (
-                                    <View
-                                        key={opt.value}
-                                        onClick={() => setDraftFilter(prev => ({ ...prev, priceRange: opt.value }))}
-                                        style={{
-                                            marginRight: '8px',
-                                            marginBottom: '8px',
-                                            padding: '6px 10px',
-                                            borderRadius: '999px',
-                                            border: active ? '1px solid #1677ff' : '1px solid #ddd',
-                                            color: active ? '#1677ff' : '#333',
-                                            background: active ? '#f0f7ff' : '#fff'
-                                        }}
-                                    >
-                                        {opt.label}
-                                    </View>
-                                )
-                            })}
-                        </View>
+            {/* 结果统计 */}
+            <View style={{ padding: '14rpx 20rpx 10rpx' }}>
+                <Text style={{ fontSize: '22rpx', color: '#666' }}>
+                    共找到 <Text style={{ color: '#1677ff' }}>{total}</Text> 家酒店
+                </Text>
+            </View>
 
-                        {/* 底部按钮 */}
-                        <View style={{ marginTop: '16px', display: 'flex' }}>
-                            <View
-                                onClick={resetDraftFilter}
-                                style={{
-                                    flex: 1,
-                                    textAlign: 'center',
-                                    border: '1px solid #ddd',
-                                    borderRadius: '10px',
-                                    padding: '10px 0',
-                                    marginRight: '10px'
-                                }}
-                            >
-                                重置
-                            </View>
-
-                            <View
-                                onClick={applyFilterAndSearch}
-                                style={{
-                                    flex: 1,
-                                    textAlign: 'center',
-                                    background: '#1677ff',
-                                    color: '#fff',
-                                    borderRadius: '10px',
-                                    padding: '10px 0'
-                                }}
-                            >
-                                应用筛选
-                            </View>
-                        </View>
+            {/* 列表区域 */}
+            <View style={{ padding: '0 20rpx 24rpx' }}>
+                {loading && list.length === 0 ? (
+                    <View
+                        style={{
+                            background: '#fff',
+                            borderRadius: '20rpx',
+                            padding: '40rpx 20rpx',
+                            textAlign: 'center'
+                        }}
+                    >
+                        <Text style={{ color: '#999', fontSize: '26rpx' }}>加载中...</Text>
                     </View>
-                </View>
-            ) : null}
+                ) : list.length === 0 ? (
+                    <View
+                        style={{
+                            background: '#fff',
+                            borderRadius: '20rpx',
+                            padding: '48rpx 20rpx',
+                            textAlign: 'center'
+                        }}
+                    >
+                        <Text style={{ display: 'block', color: '#666', fontSize: '28rpx', fontWeight: 600 }}>
+                            没有找到符合条件的酒店
+                        </Text>
+                        <Text style={{ display: 'block', color: '#999', fontSize: '22rpx', marginTop: '8rpx' }}>
+                            试试减少筛选条件或更换关键词
+                        </Text>
+                    </View>
+                ) : (
+                    <>
+                        {list.map((item, index) => renderHotelCard(item, index))}
+
+                        <View
+                            style={{
+                                padding: '12rpx 0 18rpx',
+                                textAlign: 'center'
+                            }}
+                        >
+                            {loadingMore ? (
+                                <Text style={{ color: '#999', fontSize: '22rpx' }}>加载更多中...</Text>
+                            ) : hasMore ? (
+                                <Text style={{ color: '#bbb', fontSize: '22rpx' }}>上拉 / 触底继续加载</Text>
+                            ) : (
+                                <Text style={{ color: '#bbb', fontSize: '22rpx' }}>已经到底了</Text>
+                            )}
+                        </View>
+                    </>
+                )}
+            </View>
         </View>
     )
 }
